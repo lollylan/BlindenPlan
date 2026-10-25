@@ -819,10 +819,11 @@ export class Editor {
     else if (!fits) { ctx.strokeStyle = DANGER; ctx.setLineDash([3, 3]); ctx.lineWidth = 1.2; ctx.stroke(); ctx.setLineDash([]); }
 
     if (k >= 0.9) {
-      ctx.fillStyle = INK; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+      // zentriert zeichnen: Inter ist nicht so breit wie die gemessene 3D-Schrift
+      ctx.fillStyle = INK; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
       for (const ti of lay.textItems) {
         ctx.font = `700 ${(ti.size * k).toFixed(1)}px Inter, system-ui, sans-serif`;
-        ctx.fillText(ti.text, c.x + ti.x * k, c.y - ti.baseline * k);
+        ctx.fillText(ti.text, c.x + (ti.x + ti.width / 2) * k, c.y - ti.baseline * k);
       }
       const r = Math.max(1, (s.braille.dotDiameter / 2) * k);
       ctx.beginPath();
