@@ -11,9 +11,20 @@ export function normalizeRoom(points, doors, unitScale = 1) {
   const { pts, reversed } = ensureCCW(points);
   const out = [];
   for (const d of doors || []) {
-    let edge = d.edge, t = d.t;
-    if (reversed) { edge = (n - 2 - d.edge + n) % n; t = 1 - d.t; }
-    out.push({ edge, t, half: (d.width * unitScale) / 2, threshold: d.threshold !== false, id: d.id });
+    let edge = d.edge;
+    if (reversed) edge = (n - 2 - d.edge + n) % n;
+    if (d.s0 !== undefined) {
+      // Intervall entlang der Kante (z. B. Tür des Nachbarraums), in Kanteneinheiten der übergebenen Punkte
+      const A = pts[edge], B = pts[(edge + 1) % n];
+      const L = dist(A, B);
+      let s0 = d.s0 * unitScale, s1 = d.s1 * unitScale;
+      if (reversed) { const a = L - s1, b = L - s0; s0 = a; s1 = b; }
+      out.push({ edge, s0, s1, threshold: d.threshold !== false, id: d.id, foreign: !!d.foreign });
+    } else {
+      let t = d.t;
+      if (reversed) t = 1 - d.t;
+      out.push({ edge, t, half: (d.width * unitScale) / 2, threshold: d.threshold !== false, id: d.id });
+    }
   }
   return { pts, doors: out };
 }
@@ -26,16 +37,21 @@ export function doorIntervals(pts, doors) {
     const A = pts[d.edge], B = pts[(d.edge + 1) % n];
     const L = dist(A, B);
     if (L < 1e-9) continue;
+    if (d.s0 !== undefined) {
+      const s0 = Math.max(0, Math.min(L, d.s0)), s1 = Math.max(0, Math.min(L, d.s1));
+      if (s1 - s0 > 1e-6) per[d.edge].push({ s0, s1, threshold: d.threshold, id: d.id, foreign: !!d.foreign });
+      continue;
+    }
     const half = Math.min(d.half, L / 2);
     const c = Math.max(half, Math.min(L - half, d.t * L));
-    per[d.edge].push({ s0: c - half, s1: c + half, threshold: d.threshold, id: d.id });
+    per[d.edge].push({ s0: c - half, s1: c + half, threshold: d.threshold, id: d.id, foreign: false });
   }
   for (let i = 0; i < n; i++) {
     const list = per[i].sort((a, b) => a.s0 - b.s0);
     const merged = [];
     for (const iv of list) {
       const last = merged[merged.length - 1];
-      if (last && iv.s0 <= last.s1 + 1e-9) { last.s1 = Math.max(last.s1, iv.s1); last.threshold = last.threshold && iv.threshold; }
+      if (last && iv.s0 <= last.s1 + 1e-9) { last.s1 = Math.max(last.s1, iv.s1); last.threshold = last.threshold && iv.threshold; last.foreign = last.foreign && iv.foreign; }
       else merged.push({ ...iv });
     }
     per[i] = merged;
@@ -64,7 +80,7 @@ export function wallRuns(pts, doors, thickness) {
 
   const gaps = [];
   for (let i = 0; i < n; i++) for (const iv of per[i]) {
-    gaps.push({ a: at(i, iv.s0), b: at(i, iv.s1), ia: inner(i, iv.s0), ib: inner(i, iv.s1), edge: i, threshold: iv.threshold, id: iv.id });
+    gaps.push({ a: at(i, iv.s0), b: at(i, iv.s1), ia: inner(i, iv.s0), ib: inner(i, iv.s1), edge: i, threshold: iv.threshold, id: iv.id, foreign: !!iv.foreign });
   }
 
   const flat = [];
@@ -121,6 +137,37 @@ export function dashedRuns(pts, thickness, dash, gap) {
     }
   }
   return runs;
+}
+
+/**
+ * Türen anderer Räume, die auf einer eigenen Kante liegen (gemeinsame Wand), als Intervalle
+ * entlang der eigenen Kanten – damit die Tür beide Wandbänder durchbricht.
+ * Einheiten: Planmeter. tol = zulässiger Abstand zur Kantenlinie.
+ */
+export function foreignDoorIntervals(room, rooms, tol = 0.02) {
+  const out = [];
+  const n = room.points.length;
+  for (const other of rooms) {
+    if (other === room || other.id === room.id || other.type !== 'room') continue;
+    for (const d of other.doors || []) {
+      const seg = doorSegment(other.points, d);
+      for (let i = 0; i < n; i++) {
+        const A = room.points[i], B = room.points[(i + 1) % n];
+        const L = dist(A, B);
+        if (L < 1e-9) continue;
+        const dir = norm(sub(B, A)), nrm = left(dir);
+        if (Math.abs(sub(seg.a, A).x * nrm.x + sub(seg.a, A).y * nrm.y) > tol) continue;
+        if (Math.abs(sub(seg.b, A).x * nrm.x + sub(seg.b, A).y * nrm.y) > tol) continue;
+        let s0 = sub(seg.a, A).x * dir.x + sub(seg.a, A).y * dir.y;
+        let s1 = sub(seg.b, A).x * dir.x + sub(seg.b, A).y * dir.y;
+        if (s0 > s1) { const t = s0; s0 = s1; s1 = t; }
+        s0 = Math.max(0, s0); s1 = Math.min(L, s1);
+        if (s1 - s0 < 0.05) continue;
+        out.push({ edge: i, s0, s1, threshold: d.threshold !== false, id: d.id, foreign: true });
+      }
+    }
+  }
+  return out;
 }
 
 /** Türsegment (Außenkante) in Originalkoordinaten. */

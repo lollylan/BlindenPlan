@@ -1,6 +1,6 @@
 // 3D-Generator: Plan (Meter) → Dreiecksnetze (Millimeter, Z nach oben).
 import * as G from './geom.js';
-import { normalizeRoom, wallRuns, dashedRuns } from './walls.js';
+import { normalizeRoom, wallRuns, dashedRuns, foreignDoorIntervals } from './walls.js';
 import { layoutLabel, displayText } from './labels.js';
 import { plateInfo } from './state.js';
 import polygonClipping from './vendor/polygon-clipping.js';
@@ -190,7 +190,7 @@ export function buildModel(plan, opts = {}) {
 
   const addRoomFeatures = (pb, room, color) => {
     if (room.type === 'room') {
-      const { pts, doors } = normalizeRoom(room.points.map(toMM), room.doors, s.scale);
+      const { pts, doors } = normalizeRoom(room.points.map(toMM), [...room.doors, ...foreignDoorIntervals(room, plan.rooms)], s.scale);
       const { runs, gaps } = wallRuns(pts, doors, s.wall.thickness);
       const out = pb.part('raised', room.id, color);
       for (const run of runs) extrudeStrip(out, run.outer, run.inner, run.closed, zRaised0, baseTop + s.wall.height);

@@ -1,6 +1,6 @@
 // 2D-Editor: Zeichenfläche für Räume, Bereiche, Türen und Beschriftungen (Einheit: Meter).
 import * as G from './geom.js';
-import { normalizeRoom, wallRuns, dashedRuns, doorSegment } from './walls.js';
+import { normalizeRoom, wallRuns, dashedRuns, doorSegment, foreignDoorIntervals } from './walls.js';
 import { layoutLabel } from './labels.js';
 import { makeRoom, makeLabel, rectPoints, ROOM_COLORS, plateInfo, bedSize, planExtent, uid } from './state.js';
 
@@ -740,7 +740,7 @@ export class Editor {
     ctx.fillStyle = room.color; ctx.globalAlpha = .26; ctx.fill(); ctx.globalAlpha = 1;
 
     const t = s.wall.thickness / s.scale;
-    const { pts, doors } = normalizeRoom(room.points, room.doors, 1);
+    const { pts, doors } = normalizeRoom(room.points, [...room.doors, ...foreignDoorIntervals(room, this.store.plan.rooms)], 1);
     const { runs, gaps } = wallRuns(pts, doors, t);
     ctx.fillStyle = '#2a2824';
     for (const run of runs) this.fillStrip(ctx, run);
@@ -751,6 +751,7 @@ export class Editor {
         this.fillStrip(ctx, { outer: [g.a, g.b], inner: [g.ia, g.ib], closed: false });
         ctx.fillStyle = '#2a2824';
       }
+      if (g.foreign) continue; // Schwungbogen nur beim Raum, dem die Tür gehört
       const a = this.toScreen(g.a), b = this.toScreen(g.b), ia = this.toScreen(g.ia);
       const w = G.dist(a, b);
       if (w > 6) {

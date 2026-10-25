@@ -10,7 +10,7 @@ Läuft komplett im Browser, ohne Installation und ohne Server. Pläne werden aut
 
 - **Grundriss zeichnen** in Metern: Räume als Rechteck oder freies Polygon, Ecken ziehen, Ecken einfügen (Alt+Klick auf eine Kante), Raster-Fang.
 - **Bereiche** ohne Wände (z. B. Anmeldung und Wartebereich im selben Raum) mit flacher, gestrichelter Tastlinie.
-- **Türen** als Lücken in der Wand, optional mit niedriger Schwelle; entlang der Wand verschiebbar.
+- **Türen** als Lücken in der Wand, optional mit niedriger Schwelle; entlang der Wand verschiebbar. Auf gemeinsamen Wänden wird die Wand des Nachbarraums automatisch mit durchbrochen.
 - **Beschriftung** je Raum: Name und Kurzbezeichnung. Braille wird automatisch erzeugt (deutsche Basisschrift oder Vollschrift), darüber optional erhabene Profilschrift für Sehende. Freie Beschriftungen (z. B. „Eingang“) sind ebenfalls möglich.
 - **Legende** als eigene Tafel: Kurzbezeichnung → voller Name, in Braille und Profilschrift.
 - **3D-Vorschau** (Three.js) mit Gesamtplatte oder Einzelteilen, zweifarbig oder pro Raum.
