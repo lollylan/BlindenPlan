@@ -2,7 +2,8 @@
 import * as G from './geom.js';
 import { normalizeRoom, wallRuns, dashedRuns, doorSegment, foreignDoorIntervals } from './walls.js';
 import { layoutLabel } from './labels.js';
-import { makeRoom, makeLabel, rectPoints, ROOM_COLORS, plateInfo, bedSize, planExtent, uid } from './state.js';
+import { makeRoom, makeLabel, makeMarker, rectPoints, ROOM_COLORS, plateInfo, bedSize, planExtent, uid } from './state.js';
+import { markerOutline } from './markers.js';
 
 const HIT = 9;        // Trefferradius in px
 const HANDLE = 5;     // halbe Griffgröße in px
@@ -48,7 +49,9 @@ export class Editor {
   snap(p, opts = {}) {
     let q = { x: p.x, y: p.y };
     if (this.snapStep > 0) {
-      q = { x: Math.round(p.x / this.snapStep) * this.snapStep, y: Math.round(p.y / this.snapStep) * this.snapStep };
+      // auf 1e-6 runden, sonst stehen Werte wie 1,7000000000000002 im Panel
+      const r = (v) => Math.round(Math.round(v / this.snapStep) * this.snapStep * 1e6) / 1e6;
+      q = { x: r(p.x), y: r(p.y) };
     }
     if (opts.vertices !== false) {
       // Fang an bestehenden Ecken (Puzzle-Anschluss)
@@ -173,6 +176,14 @@ export class Editor {
       this.store.setTool('select');
       this.cb.onCreated?.('label');
     }
+    if (tool === 'marker') {
+      const sp = this.snap(p, { vertices: false });
+      const mk = makeMarker(sp.x, sp.y, this.store.markerKind);
+      this.store.update(plan => plan.markers.push(mk));
+      this.store.select({ type: 'marker', id: mk.id });
+      this.store.setTool('select');
+      this.cb.onCreated?.('marker');
+    }
   }
 
   downSelect(e, s, p) {
@@ -210,6 +221,12 @@ export class Editor {
         const lab = st.label(hit.id);
         st.select({ type: 'label', id: hit.id });
         this.drag = { type: 'label', id: hit.id, snapshot, moved: false, offset: { x: lab.x - p.x, y: lab.y - p.y } };
+        break;
+      }
+      case 'marker': {
+        const mk = st.marker(hit.id);
+        st.select({ type: 'marker', id: hit.id });
+        this.drag = { type: 'marker', id: hit.id, snapshot, moved: false, offset: { x: mk.x - p.x, y: mk.y - p.y } };
         break;
       }
       case 'edge':
@@ -328,6 +345,13 @@ export class Editor {
       case 'label': {
         const lab = st.label(d.id);
         lab.x = p.x + d.offset.x; lab.y = p.y + d.offset.y;
+        d.moved = true; st.touch();
+        return;
+      }
+      case 'marker': {
+        const mk = st.marker(d.id);
+        const sp = this.snap({ x: p.x + d.offset.x, y: p.y + d.offset.y }, { vertices: false });
+        mk.x = sp.x; mk.y = sp.y;
         d.moved = true; st.touch();
         return;
       }
@@ -493,6 +517,11 @@ export class Editor {
       st.select(null);
       return true;
     }
+    if (sel.type === 'marker') {
+      st.update(plan => { plan.markers = plan.markers.filter(m => m.id !== sel.id); });
+      st.select(null);
+      return true;
+    }
     if (sel.type === 'door') {
       st.update(plan => { const r = plan.rooms.find(x => x.id === sel.roomId); if (r) r.doors = r.doors.filter(d => d.id !== sel.id); });
       st.select({ type: 'room', id: sel.roomId });
@@ -572,6 +601,11 @@ export class Editor {
         if (G.dist(this.toScreen(c.point), s) <= HIT) return { type: 'door', roomId: selRoom.id, id: d.id };
       }
     }
+    // Marker liegen obenauf
+    for (let i = plan.markers.length - 1; i >= 0; i--) {
+      const mk = plan.markers[i];
+      if (this.markerHit(mk, s, plan.settings)) return { type: 'marker', id: mk.id };
+    }
     // Beschriftungen
     const labelHit = (x, y, el) => {
       const lay = layoutLabel(el, plan.settings);
@@ -618,12 +652,24 @@ export class Editor {
     return null;
   }
 
+  markerScreen(mk, s) {
+    const k = this.pxPerMm();
+    const c = this.toScreen(mk);
+    return markerOutline(mk, s).map(q => ({ x: c.x + q.x * k, y: c.y - q.y * k }));
+  }
+
+  markerHit(mk, sp, s) {
+    const pts = this.markerScreen(mk, s);
+    if (G.pointInPolygon(sp, pts)) return true;
+    return G.dist(this.toScreen(mk), sp) <= HIT;
+  }
+
   updateCursor() {
     const tool = this.store.tool;
     let cur = 'default';
     if (this.drag?.type === 'pan' && !this.drag.maybe) cur = 'grabbing';
     else if (tool === 'pan' || this.spaceDown) cur = 'grab';
-    else if (tool === 'rect' || tool === 'poly' || tool === 'zone' || tool === 'zonepoly' || tool === 'label' || tool === 'door') cur = 'crosshair';
+    else if (tool === 'rect' || tool === 'poly' || tool === 'zone' || tool === 'zonepoly' || tool === 'label' || tool === 'marker' || tool === 'door') cur = 'crosshair';
     else if (this.drag) cur = this.drag.type === 'vertex' ? 'crosshair' : 'move';
     else if (this.hover) {
       cur = this.hover.type === 'vertex' ? 'crosshair' : (this.hover.type === 'edge' ? 'pointer' : 'move');
@@ -660,6 +706,7 @@ export class Editor {
     // Beschriftungen
     for (const r of plan.rooms) if (r.label.visible !== false) this.drawLabel(ctx, r.label.x, r.label.y, r, s, selRoomId === r.id && sel?.type === 'room', r.type === 'room' ? r : null);
     for (const l of plan.labels) this.drawLabel(ctx, l.x, l.y, l, s, sel?.type === 'label' && sel.id === l.id, null);
+    for (const mk of plan.markers) this.drawMarker(ctx, mk, s, sel?.type === 'marker' && sel.id === mk.id);
 
     // Hover
     if (this.store.tool === 'select' && this.hover && !this.drag) {
@@ -834,6 +881,20 @@ export class Editor {
       ctx.fillStyle = 'rgba(28,27,24,.35)'; ctx.fill();
       ctx.font = '500 11px Inter, system-ui, sans-serif'; ctx.fillStyle = INK; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
       ctx.fillText(lay.text.split('\n')[0], c.x, c.y - h / 2 - 2);
+    }
+  }
+
+  drawMarker(ctx, mk, s, selected) {
+    const pts = this.markerScreen(mk, s);
+    ctx.beginPath();
+    pts.forEach((q, i) => { if (i === 0) ctx.moveTo(q.x, q.y); else ctx.lineTo(q.x, q.y); });
+    ctx.closePath();
+    ctx.fillStyle = INK; ctx.fill();
+    if (selected) {
+      const c = this.toScreen(mk);
+      const r = Math.max(...pts.map(q => G.dist(q, c))) + 5;
+      ctx.beginPath(); ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
+      ctx.strokeStyle = ACCENT; ctx.setLineDash([4, 3]); ctx.lineWidth = 1.2; ctx.stroke(); ctx.setLineDash([]);
     }
   }
 

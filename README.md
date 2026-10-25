@@ -12,7 +12,8 @@ Läuft komplett im Browser, ohne Installation und ohne Server. Pläne werden aut
 - **Bereiche** ohne Wände (z. B. Anmeldung und Wartebereich im selben Raum) mit flacher, gestrichelter Tastlinie.
 - **Türen** als Lücken in der Wand, optional mit niedriger Schwelle; entlang der Wand verschiebbar. Auf gemeinsamen Wänden wird die Wand des Nachbarraums automatisch mit durchbrochen.
 - **Beschriftung** je Raum: Name und Kurzbezeichnung. Braille wird automatisch erzeugt (deutsche Basisschrift oder Vollschrift), darüber optional erhabene Profilschrift für Sehende. Freie Beschriftungen (z. B. „Eingang“) sind ebenfalls möglich.
-- **Legende** als eigene Tafel: Kurzbezeichnung → voller Name, in Braille und Profilschrift.
+- **Orientierungsmarker** als tastbare Symbole: Vollkreis für den Standort („Sie sind hier“), Pfeil für Eingang oder Laufrichtung (drehbar), Quadrat für einen Treffpunkt. Die Bedeutung ist frei wählbar und steht mit dem Symbol in der Legende.
+- **Legende** als eigene Tafel: Marker mit ihrer Bedeutung und Kurzbezeichnung → voller Name, in Braille und Profilschrift.
 - **3D-Vorschau** (Three.js) mit Gesamtplatte oder Einzelteilen, zweifarbig oder pro Raum.
 - **Export**
   - **3MF** mit Grundplatte und erhabenen Teilen als getrennten Teilen eines Objekts (je ein Filament zuweisen) oder als ein Körper.

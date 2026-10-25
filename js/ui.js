@@ -2,6 +2,7 @@
 import { layoutLabel, displayText } from './labels.js';
 import { ROOM_COLORS, BEDS, bedSize, plateInfo, planExtent, emptyPlan, examplePlan, normalizePlan, defaultSettings } from './state.js';
 import { buildModel, legendEntries, hasTextProvider } from './model3d.js';
+import { MARKER_KINDS, markerKind, markerLegendEntries } from './markers.js';
 import { stlBinary, threeMF, zipFiles, download, safeName } from './exporters.js';
 import { buildFrame, frameLayout } from './frame.js';
 import * as G from './geom.js';
@@ -19,6 +20,7 @@ const TOOL_HINTS = {
   zonepoly: 'Ecken des Bereichs anklicken · Enter schließt',
   door: 'Auf eine Wand klicken, um eine Tür zu setzen',
   label: 'Position der Beschriftung anklicken',
+  marker: 'Position des Markers anklicken',
   pan: 'Ziehen verschiebt die Ansicht · Mausrad zoomt',
 };
 
@@ -46,7 +48,7 @@ export class UI {
     name.addEventListener('change', () => { if (this.editSnapshot) { st.pushUndo(this.editSnapshot); this.editSnapshot = null; } st.commit(); });
 
     $('btnNew').addEventListener('click', () => {
-      if ((st.plan.rooms.length || st.plan.labels.length) && !confirm('Neuen Plan beginnen? Der aktuelle Plan wird verworfen (vorher ggf. als JSON speichern).')) return;
+      if (hasContent(st.plan) && !confirm('Neuen Plan beginnen? Der aktuelle Plan wird verworfen (vorher ggf. als JSON speichern).')) return;
       st.setPlan(emptyPlan()); this.editor.fit(); this.setTab('selection');
     });
     $('btnOpen').addEventListener('click', () => $('fileInput').click());
@@ -121,6 +123,7 @@ export class UI {
       case 'n': case 'N': st.setTool('zonepoly'); break;
       case 't': case 'T': st.setTool('door'); break;
       case 'l': case 'L': st.setTool('label'); break;
+      case 'm': case 'M': st.setTool('marker'); break;
       case 'h': case 'H': st.setTool('pan'); break;
       case '0': this.editor.fit(); break;
       case '+': case '=': this.editor.zoomAt(1.25); break;
@@ -140,6 +143,7 @@ export class UI {
       if (!s) return null;
       if (s.type === 'room' || s.type === 'vertex' || s.type === 'door') return st.room(s.id ?? s.roomId);
       if (s.type === 'label') return st.label(s.id);
+      if (s.type === 'marker') return st.marker(s.id);
       return null;
     }
     if (t === 'door') {
@@ -203,6 +207,19 @@ export class UI {
     switch (a) {
       case 'select': st.select({ type: 'room', id: btn.dataset.id }); break;
       case 'selectLabel': st.select({ type: 'label', id: btn.dataset.id }); break;
+      case 'selectMarker': st.select({ type: 'marker', id: btn.dataset.id }); break;
+      case 'markerTool': st.markerKind = btn.dataset.kind; st.setTool('marker'); $('editor').focus(); break;
+      case 'markerKind': {
+        const mk = st.marker(sel?.id);
+        if (!mk) break;
+        const from = markerKind(mk.kind), to = markerKind(btn.dataset.kind);
+        st.markerKind = to.id;
+        // Bedeutung mitnehmen, solange sie noch der Standardtext der alten Form ist
+        st.update(() => { mk.kind = to.id; if (!mk.name.trim() || mk.name === from.name) mk.name = to.name; });
+        this.renderSelection(); // Fokus liegt im Panel, refresh() zeichnet es dann nicht neu
+        break;
+      }
+      case 'markerRot': { const mk = st.marker(sel?.id); if (mk) { st.update(() => { mk.rot = ((mk.rot + parseFloat(btn.dataset.deg)) % 360 + 360) % 360; }); this.renderSelection(); } break; }
       case 'selectDoor': st.select({ type: 'door', roomId: btn.dataset.room, id: btn.dataset.door }); break;
       case 'delete': this.editor.deleteSelection(); break;
       case 'deleteDoor': st.update(p => { const r = p.rooms.find(r => r.id === btn.dataset.room); if (r) r.doors = r.doors.filter(d => d.id !== btn.dataset.door); }); if (sel?.type === 'door') st.select({ type: 'room', id: btn.dataset.room }); break;
@@ -289,7 +306,7 @@ export class UI {
     $('btnRedo').disabled = !st.redoStack.length;
     const nameEl = $('projectName');
     if (document.activeElement !== nameEl) nameEl.value = st.plan.name;
-    $('emptyState').hidden = !!(st.plan.rooms.length || st.plan.labels.length);
+    $('emptyState').hidden = hasContent(st.plan);
     this.updateStatus();
     document.querySelectorAll('.rail .tool[data-tool]').forEach(b => b.classList.toggle('active', b.dataset.tool === st.tool));
     if (what === 'tool') {
@@ -373,6 +390,7 @@ export class UI {
     const host = $('tab-selection');
     if (!sel) { host.innerHTML = this.elementListHTML(); return; }
     if (sel.type === 'label') { host.innerHTML = this.labelPanelHTML(st.label(sel.id)); return; }
+    if (sel.type === 'marker') { host.innerHTML = this.markerPanelHTML(st.marker(sel.id)); return; }
     if (sel.type === 'door') { host.innerHTML = this.doorPanelHTML(st.room(sel.roomId), sel.id); return; }
     const room = st.room(sel.type === 'room' ? sel.id : sel.roomId);
     if (!room) { host.innerHTML = this.elementListHTML(); return; }
@@ -388,8 +406,10 @@ export class UI {
       return `<button class="list-item" data-action="select" data-id="${r.id}"><span class="dot ${r.type === 'zone' ? 'zone' : ''}" style="background:${esc(r.color)}"></span><span class="name">${esc(r.name || '–')}</span><span class="sub">${fmt(b.width, 1)} × ${fmt(b.height, 1)} m</span></button>`;
     };
     const labelItem = (l) => `<button class="list-item" data-action="selectLabel" data-id="${l.id}"><span class="dot" style="background:transparent;box-shadow:none">${ICON('i-label')}</span><span class="name">${esc(l.name || '–')}</span><span class="sub">Text</span></button>`;
+    const markerItem = (m) => `<button class="list-item" data-action="selectMarker" data-id="${m.id}"><span class="dot" style="background:transparent;box-shadow:none">${ICON('i-marker')}</span><span class="name">${esc(m.name || '–')}</span><span class="sub">${esc(markerKind(m.kind).shape)}</span></button>`;
     const warnings = this.collectWarnings();
-    const total = rooms.length + zones.length + plan.labels.length;
+    const total = rooms.length + zones.length + plan.labels.length + plan.markers.length;
+    const legendCount = legendEntries(plan).length + markerLegendEntries(plan).length;
     return `
       ${this.warningsHTML(warnings)}
       <div class="section">
@@ -404,7 +424,12 @@ export class UI {
         <div class="section-title"><span>Freie Beschriftungen</span><span class="hint">${plan.labels.length}</span></div>
         <div class="list">${plan.labels.length ? plan.labels.map(labelItem).join('') : '<div class="empty-list">Mit dem Werkzeug „Beschriftung“ (L) setzen, z. B. „Eingang“.</div>'}</div>
       </div>
-      ${total ? `<div class="section"><div class="section-title"><span>Legende</span></div><div class="meta">${legendEntries(plan).length ? `<span><b>${legendEntries(plan).length}</b> Einträge mit Kurzbezeichnung</span>` : '<span>Keine Kurzbezeichnungen vergeben.</span>'}</div></div>` : ''}
+      <div class="section">
+        <div class="section-title"><span>Orientierungsmarker</span><span class="hint">${plan.markers.length}</span></div>
+        <div class="list">${plan.markers.length ? plan.markers.map(markerItem).join('') : '<div class="empty-list">Tastbare Symbole, z. B. der Standort „Sie sind hier“ oder ein Pfeil am Eingang. Werkzeug „Marker“ (M).</div>'}</div>
+        <div class="actions">${MARKER_KINDS.map(k => `<button class="btn small" data-action="markerTool" data-kind="${k.id}">${esc(k.shape)} setzen</button>`).join('')}</div>
+      </div>
+      ${total ? `<div class="section"><div class="section-title"><span>Legende</span></div><div class="meta">${legendCount ? `<span><b>${legendCount}</b> Einträge (Kurzbezeichnungen und Marker)</span>` : '<span>Keine Kurzbezeichnungen oder Marker.</span>'}</div></div>` : ''}
       <div class="section"><div class="meta"><span>Maßstab 1:${Math.round(1000 / s.scale)}</span><span>Rechtsklick/Mittlere Taste zieht die Ansicht</span></div></div>`;
   }
 
@@ -545,11 +570,40 @@ export class UI {
       <div class="actions"><button class="btn danger" data-action="delete">${ICON('i-trash')}<span>Beschriftung löschen</span></button></div>`;
   }
 
+  markerPanelHTML(m) {
+    if (!m) return this.elementListHTML();
+    const s = this.store.plan.settings;
+    const kind = markerKind(m.kind);
+    return `
+      <div class="section">
+        <div class="section-title"><span>Orientierungsmarker</span><span class="hint">${esc(kind.shape)}</span></div>
+        <div class="field"><div class="lbl">Form</div>
+          <div class="actions">${MARKER_KINDS.map(k => `<button class="btn small ${k.id === m.kind ? 'primary' : ''}" data-action="markerKind" data-kind="${k.id}" aria-pressed="${k.id === m.kind}">${esc(k.shape)}</button>`).join('')}</div>
+        </div>
+        <div class="field"><label for="f-name">Bedeutung in der Legende</label><input class="input" id="f-name" type="text" value="${esc(m.name)}" data-path="name" data-type="text" data-target="sel" placeholder="${esc(kind.name)}" autocomplete="off"><div class="help">Auf dem Plan steht nur das Symbol. Die Legende erklärt es in Braille und Profilschrift; gleiche Form und Bedeutung erscheinen dort nur einmal.</div></div>
+        <div class="row">
+          <div class="field"><label>x</label><div class="input-unit"><input class="input" type="number" step="0.05" value="${m.x}" data-path="x" data-type="number" data-target="sel"><span>m</span></div></div>
+          <div class="field"><label>y</label><div class="input-unit"><input class="input" type="number" step="0.05" value="${m.y}" data-path="y" data-type="number" data-target="sel"><span>m</span></div></div>
+        </div>
+        ${m.kind === 'here' ? '' : `
+        <div class="field"><label for="f-rot">Drehung</label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <div class="input-unit" style="max-width:110px"><input class="input" id="f-rot" type="number" step="15" min="0" max="359" value="${Math.round(m.rot)}" data-path="rot" data-type="number" data-target="sel"><span>°</span></div>
+            <button class="btn small" data-action="markerRot" data-deg="90">90° links</button>
+            <button class="btn small" data-action="markerRot" data-deg="-90">90° rechts</button>
+          </div>
+          ${m.kind === 'arrow' ? '<div class="help">0° zeigt nach oben. Am Eingang zeigt der Pfeil ins Gebäude.</div>' : ''}
+        </div>`}
+        <dl class="kv"><dt>Im Druck</dt><dd>${fmt1(s.marker.size)} mm, ${fmt1(s.marker.height)} mm hoch</dd></dl>
+      </div>
+      <div class="actions"><button class="btn danger" data-action="delete">${ICON('i-trash')}<span>Marker löschen</span></button></div>`;
+  }
+
   updateDerived() {
     const st = this.store;
     const sel = st.selection;
     if (this.tab === 'selection' && sel) {
-      const el = sel.type === 'label' ? st.label(sel.id) : st.room(sel.id ?? sel.roomId);
+      const el = sel.type === 'label' ? st.label(sel.id) : sel.type === 'marker' ? null : st.room(sel.id ?? sel.roomId);
       if (el && !(sel.type === 'door')) {
         const host = $('tab-selection');
         const block = host.querySelector('#braillePreview')?.closest('.field');
@@ -665,6 +719,13 @@ export class UI {
         </div>
       </div>
       <div class="section">
+        <div class="section-title"><span>Orientierungsmarker</span></div>
+        <div class="row">
+          ${this.num('Größe', 'settings.marker.size', s.marker.size, { step: 0.5, min: 4, max: 20, help: 'Durchmesser des Standort-Kreises; Pfeil und Quadrat richten sich danach.' })}
+          ${this.num('Höhe', 'settings.marker.height', s.marker.height, { step: 0.1, min: 0.4, max: 4, help: 'Höher als Braillepunkte, damit das Symbol auffällt.' })}
+        </div>
+      </div>
+      <div class="section">
         <div class="section-title"><span>Rahmen (Wanne zum Einlegen)</span></div>
         <div class="row">
           ${this.num('Randbreite', 'settings.frame.rimW', s.frame.rimW, { step: 0.5, min: 3, max: 30 })}
@@ -699,7 +760,7 @@ export class UI {
     const info = plateInfo(plan);
     const o = this.exportOpts;
     const rooms = plan.rooms.filter(r => r.type === 'room').length;
-    const legendCount = legendEntries(plan).length;
+    const legendCount = legendEntries(plan).length + markerLegendEntries(plan).length;
     const layer = s.plate.thickness;
     const layers02 = Math.round(layer / 0.2);
     let scopeText = '';
@@ -709,7 +770,7 @@ export class UI {
     return `
       <div class="big">${esc(scopeText)}</div>
       <div class="small">${o.split ? (o.format === '3mf' ? 'Grundplatte und erhabene Teile als getrennte Teile eines Objekts – im Slicer je ein Filament zuweisen.' : 'Grundplatte und erhabene Teile als getrennte STL-Dateien (ZIP) – im Slicer zusammenfügen und je ein Filament zuweisen.') : `Ein Körper. Filamentwechsel im Slicer bei <b>${fmt1(layer)} mm</b> einfügen (Oberkante Grundplatte, bei 0,2 mm Schichten nach Schicht ${layers02}).`}</div>
-      ${o.legend && o.scope !== 'selected' ? `<div class="small" style="margin-top:4px">Legende: ${legendCount ? `${legendCount} Einträge als eigene Tafel` : 'keine Einträge (Kurzbezeichnungen fehlen) – wird weggelassen'}</div>` : ''}`;
+      ${o.legend && o.scope !== 'selected' ? `<div class="small" style="margin-top:4px">Legende: ${legendCount ? `${legendCount} Einträge als eigene Tafel` : 'keine Einträge (weder Kurzbezeichnungen noch Marker) – wird weggelassen'}</div>` : ''}`;
   }
 
   renderExport() {
@@ -720,7 +781,7 @@ export class UI {
     const hasSelRoom = selRoom && selRoom.type === 'room';
     if (o.scope === 'selected' && !hasSelRoom) o.scope = 'whole';
     const card = (key, value, title, desc, disabled = false) => `<label class="radio-card ${o[key] === value ? 'active' : ''} ${disabled ? 'disabled' : ''}" ${disabled ? 'style="opacity:.5"' : ''}><input type="radio" name="x-${key}" ${o[key] === value ? 'checked' : ''} ${disabled ? 'disabled' : ''} data-action="exportOpt" data-key="${key}" data-value="${value}"><div><div class="rc-title">${title}</div><div class="rc-desc">${desc}</div></div></label>`;
-    const none = !st.plan.rooms.length && !st.plan.labels.length;
+    const none = !hasContent(st.plan);
     $('tab-export').innerHTML = `
       ${none ? `<div class="notice info">${ICON('i-info')}<div>Erst einen Grundriss zeichnen oder den Beispielplan laden.</div></div>` : ''}
       <div class="section">
@@ -847,12 +908,16 @@ export class UI {
 
   loadExample() {
     const st = this.store;
-    if ((st.plan.rooms.length || st.plan.labels.length) && !confirm('Beispielplan laden? Der aktuelle Plan wird ersetzt.')) return;
+    if (hasContent(st.plan) && !confirm('Beispielplan laden? Der aktuelle Plan wird ersetzt.')) return;
     st.setPlan(examplePlan());
     this.editor.fit();
     this.setTab('selection');
     this.toast('Beispielplan geladen: Empfang mit Anmeldung und Wartebereich, Flur, Sprechzimmer, Labor.', 'ok', 5000);
   }
+}
+
+function hasContent(plan) {
+  return !!(plan.rooms.length || plan.labels.length || plan.markers.length);
 }
 
 function setPath(obj, path, value) {

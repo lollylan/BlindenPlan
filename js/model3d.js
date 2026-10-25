@@ -3,6 +3,7 @@ import * as G from './geom.js';
 import { normalizeRoom, wallRuns, dashedRuns, foreignDoorIntervals } from './walls.js';
 import { layoutLabel, displayText } from './labels.js';
 import { plateInfo } from './state.js';
+import { markerOutline, markerLegendEntries, markerKind } from './markers.js';
 import polygonClipping from './vendor/polygon-clipping.js';
 import earcut from './vendor/earcut.js';
 
@@ -236,6 +237,12 @@ export function buildModel(plan, opts = {}) {
     }
   };
 
+  const addMarker = (pb, mk, color, roomId) => {
+    const c = toMM(mk);
+    const pts = markerOutline(mk, s).map(q => ({ x: c.x + q.x, y: c.y + q.y }));
+    extrudePolygon(pb.part('raised', roomId ?? null, color), pts, zRaised0, baseTop + s.marker.height);
+  };
+
   if (!opts.legendOnly) {
     if (scope === 'whole') {
       const pb = new PieceBuilder('plan', plan.name || 'Plan', s.colors.base);
@@ -245,6 +252,7 @@ export function buildModel(plan, opts = {}) {
       }
       for (const r of plan.rooms) addRoomFeatures(pb, r, r.type === 'room' ? r.color : '#6f6a62');
       for (const l of plan.labels) addLabel(pb, l.x, l.y, l, '#6f6a62', null);
+      for (const mk of plan.markers) addMarker(pb, mk, '#6f6a62', null);
       pieces.push(pb.finish());
     } else {
       const roomList = plan.rooms.filter(r => r.type === 'room' && (!opts.roomIds || opts.roomIds.includes(r.id)));
@@ -260,6 +268,9 @@ export function buildModel(plan, opts = {}) {
         }
         for (const l of plan.labels) {
           if (!assigned.has(l.id) && G.pointInPolygon({ x: l.x, y: l.y }, room.points)) { assigned.add(l.id); addLabel(pb, l.x, l.y, l, room.color, room.id); }
+        }
+        for (const mk of plan.markers) {
+          if (!assigned.has(mk.id) && G.pointInPolygon(mk, room.points)) { assigned.add(mk.id); addMarker(pb, mk, room.color, room.id); }
         }
         pieces.push(pb.finish());
       }
@@ -300,16 +311,22 @@ export function buildModel(plan, opts = {}) {
               const pm = toMM({ x: l.x, y: l.y });
               if (G.pointInPolygon(pm, outer) && !holes.some(h => G.pointInPolygon(pm, h))) { assigned.add(l.id); addLabel(pb, l.x, l.y, l, '#6f6a62', null); }
             }
+            for (const mk of plan.markers) {
+              if (assigned.has(mk.id)) continue;
+              const pm = toMM(mk);
+              if (G.pointInPolygon(pm, outer) && !holes.some(h => G.pointInPolygon(pm, h))) { assigned.add(mk.id); addMarker(pb, mk, '#6f6a62', null); }
+            }
             pieces.push(pb.finish());
           }
         }
         for (const l of plan.labels) if (!assigned.has(l.id)) warnings.push(`Beschriftung „${displayText(l)}“ liegt außerhalb aller Räume und fehlt bei „Räume einzeln“.`);
+        for (const mk of plan.markers) if (!assigned.has(mk.id)) warnings.push(`Marker „${mk.name || markerKind(mk.kind).shape}“ liegt außerhalb aller Räume und fehlt bei „Räume einzeln“.`);
       }
     }
   }
 
   if (opts.legend || opts.legendOnly) {
-    const legend = buildLegend(plan, { overlap, offsetX: (info.width || 0) + 12, addLabel, warnings });
+    const legend = buildLegend(plan, { overlap, offsetX: (info.width || 0) + 12, addLabel, warnings, zRaised0 });
     if (legend) pieces.push(legend);
   }
 
@@ -339,16 +356,29 @@ export function legendEntries(plan) {
   return entries.filter(e => { const k = `${e.short}|${e.name}`.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
 }
 
-function buildLegend(plan, { overlap, offsetX, addLabel, warnings }) {
+function buildLegend(plan, { overlap, offsetX, addLabel, warnings, zRaised0 }) {
   const s = plan.settings;
   const entries = legendEntries(plan);
-  if (!entries.length) { warnings.push('Legende leer: keine Kurzbezeichnungen vergeben, die vom Namen abweichen.'); return null; }
+  const markers = markerLegendEntries(plan);
+  if (!entries.length && !markers.length) { warnings.push('Legende leer: keine Kurzbezeichnungen vergeben, die vom Namen abweichen, und keine Marker gesetzt.'); return null; }
   const margin = 7;
   const rowGap = 3;
-  const rows = [{ el: { name: 'Legende', short: '', showBraille: true, showText: true } }, ...entries.map(e => ({ el: { name: `${e.short} – ${e.name}`, short: '', showBraille: true, showText: true } }))];
-  for (const r of rows) r.lay = layoutLabel(r.el, s);
-  const width = Math.max(...rows.map(r => r.lay?.width ?? 0)) + 2 * margin;
-  const height = rows.reduce((h, r) => h + (r.lay?.height ?? 0) + rowGap, 0) - rowGap + 2 * margin;
+  const symGap = 4;
+  const text = (name) => ({ name, short: '', showBraille: true, showText: true });
+  const rows = [
+    { el: text('Legende') },
+    ...markers.map(m => ({ el: text(m.name), symbol: markerOutline({ kind: m.kind, rot: 0 }, s) })),
+    ...entries.map(e => ({ el: text(`${e.short} – ${e.name}`) })),
+  ];
+  for (const r of rows) {
+    r.lay = layoutLabel(r.el, s);
+    r.symW = r.symbol ? Math.max(...r.symbol.map(p => p.x)) - Math.min(...r.symbol.map(p => p.x)) : 0;
+    const symH = r.symbol ? Math.max(...r.symbol.map(p => p.y)) - Math.min(...r.symbol.map(p => p.y)) : 0;
+    r.w = (r.symbol ? r.symW + symGap : 0) + (r.lay?.width ?? 0);
+    r.h = Math.max(r.lay?.height ?? 0, symH);
+  }
+  const width = Math.max(...rows.map(r => r.w)) + 2 * margin;
+  const height = rows.reduce((h, r) => h + r.h + rowGap, 0) - rowGap + 2 * margin;
   const pb = new PieceBuilder('legend', 'Legende', s.colors.base);
   // Platte unterhalb bzw. rechts neben dem Plan
   const plate = G.roundedRect(offsetX, 0, width, height, s.plate.cornerRadius);
@@ -358,13 +388,19 @@ function buildLegend(plan, { overlap, offsetX, addLabel, warnings }) {
   const toPlan = (xmm, ymm) => ({ xmm, ymm });
   const base = plateInfo(plan);
   for (const r of rows) {
-    if (!r.lay) continue;
-    const cxmm = offsetX + margin + r.lay.width / 2;
-    const cymm = yTop - r.lay.height / 2;
-    // addLabel erwartet Planmeter → rückrechnen über die Plattenabbildung
-    const inv = invertToMM(base, { x: cxmm, y: cymm }, s);
-    addLabel(pb, inv.x, inv.y, r.el, '#6f6a62', null);
-    yTop -= r.lay.height + rowGap;
+    const cymm = yTop - r.h / 2;
+    let x = offsetX + margin;
+    if (r.symbol) {
+      const cx = x + r.symW / 2;
+      extrudePolygon(pb.part('raised', null, '#6f6a62'), r.symbol.map(p => ({ x: cx + p.x, y: cymm + p.y })), zRaised0, s.plate.thickness + s.marker.height);
+      x += r.symW + symGap;
+    }
+    if (r.lay) {
+      // addLabel erwartet Planmeter → rückrechnen über die Plattenabbildung
+      const inv = invertToMM(base, { x: x + r.lay.width / 2, y: cymm }, s);
+      addLabel(pb, inv.x, inv.y, r.el, '#6f6a62', null);
+    }
+    yTop -= r.h + rowGap;
   }
   return pb.finish();
 }

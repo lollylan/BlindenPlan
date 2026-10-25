@@ -1,6 +1,7 @@
 // Zustand: Plan-Datenmodell, Verlauf (Undo/Redo), Speicherung, Beispielplan.
 import { labelPoint, bbox } from './geom.js';
 import { layoutLabel } from './labels.js';
+import { MARKER_KINDS, markerRadius } from './markers.js';
 
 export const PLAN_VERSION = 1;
 const STORAGE_KEY = 'blindenplan.plan.v1';
@@ -25,6 +26,7 @@ export function defaultSettings() {
     door: { width: 0.9, threshold: true, thresholdHeight: 0.6 },
     braille: { dotDiameter: 1.5, dotHeight: 0.6, dotPitch: 2.5, cellPitch: 6.0, linePitch: 10.0, system: 'basis', capitals: false },
     text: { enabled: true, size: 5.5, height: 0.6 },
+    marker: { size: 8, height: 1.2 },
     legend: { enabled: true },
     colors: { base: '#e9e4da', raised: '#1f2a44', frame: '#cbc3b4' },
     frame: { rimW: 7, backT: 4, rimOver: 0, clearance: 0.4, split: 'auto', cols: 1, rows: 1, joint: 'dovetail', keyholes: true },
@@ -32,7 +34,7 @@ export function defaultSettings() {
 }
 
 export function emptyPlan() {
-  return { version: PLAN_VERSION, name: 'Neuer Plan', settings: defaultSettings(), rooms: [], labels: [] };
+  return { version: PLAN_VERSION, name: 'Neuer Plan', settings: defaultSettings(), rooms: [], labels: [], markers: [] };
 }
 
 let idCounter = 0;
@@ -62,6 +64,11 @@ export function makeLabel(x, y, name = 'Text', short = '') {
   return { id: uid('l'), x, y, name, short, showBraille: true, showText: true };
 }
 
+export function makeMarker(x, y, kind = 'here') {
+  const k = MARKER_KINDS.find(m => m.id === kind) ?? MARKER_KINDS[0];
+  return { id: uid('m'), kind: k.id, x, y, rot: 0, name: k.name };
+}
+
 export { displayText } from './labels.js';
 
 export function examplePlan() {
@@ -87,7 +94,10 @@ export function examplePlan() {
   const labor = makeRoom({ type: 'room', kind: 'poly', points: [{ x: 6, y: 7 }, { x: 9, y: 7 }, { x: 9, y: 9 }, { x: 8, y: 10 }, { x: 6, y: 10 }], name: 'Labor', short: '', color: ROOM_COLORS[3] });
   labor.doors = [{ id: uid('d'), edge: 0, t: 0.5, width: 0.9, threshold: true }];
   plan.rooms.push(labor);
-  plan.labels.push(makeLabel(10.0, 6.0, 'Eingang', 'Eing.'));
+  plan.labels.push(makeLabel(10.6, 6.0, 'Eingang', 'Eing.'));
+  const entry = makeMarker(9.5, 6.0, 'arrow');
+  entry.rot = 90;
+  plan.markers.push(entry, makeMarker(1.0, 6.0, 'here'));
   return plan;
 }
 
@@ -102,7 +112,7 @@ export function normalizePlan(raw) {
   d.scale = num(s.scale, d.scale);
   d.bed = typeof s.bed === 'string' ? s.bed : d.bed;
   d.bedW = num(s.bedW, d.bedW); d.bedH = num(s.bedH, d.bedH);
-  for (const grp of ['plate', 'wall', 'zone', 'door', 'braille', 'text', 'legend', 'colors', 'frame']) {
+  for (const grp of ['plate', 'wall', 'zone', 'door', 'braille', 'text', 'marker', 'legend', 'colors', 'frame']) {
     if (s[grp] && typeof s[grp] === 'object') {
       for (const k of Object.keys(d[grp])) {
         const v = s[grp][k];
@@ -137,6 +147,14 @@ export function normalizePlan(raw) {
     lab.showBraille = l.showBraille !== false; lab.showText = l.showText !== false;
     plan.labels.push(lab);
   }
+  for (const m of Array.isArray(raw.markers) ? raw.markers : []) {
+    if (!m || !isFinite(m.x) || !isFinite(m.y)) continue;
+    const mk = makeMarker(+m.x, +m.y, m.kind);
+    mk.id = typeof m.id === 'string' ? m.id : mk.id;
+    mk.rot = num(m.rot, 0);
+    if (typeof m.name === 'string') mk.name = m.name;
+    plan.markers.push(mk);
+  }
   return plan;
 }
 
@@ -153,6 +171,10 @@ export function planExtent(plan) {
   };
   for (const r of plan.rooms) if (r.label?.visible !== false) addLabel(r.label.x, r.label.y, r);
   for (const l of plan.labels) addLabel(l.x, l.y, l);
+  for (const mk of plan.markers) {
+    const r = markerRadius(mk, s) / s.scale;
+    pts.push({ x: mk.x - r, y: mk.y - r }, { x: mk.x + r, y: mk.y + r });
+  }
   if (!pts.length) return null;
   return bbox(pts);
 }
@@ -179,7 +201,8 @@ export function bedSize(settings) {
 export class Store {
   constructor() {
     this.plan = emptyPlan();
-    this.selection = null; // {type:'room'|'door'|'label'|'vertex', id, roomId?, index?}
+    this.selection = null; // {type:'room'|'door'|'label'|'marker'|'vertex', id, roomId?, index?}
+    this.markerKind = 'here'; // Form, die das Marker-Werkzeug setzt
     this.tool = 'select';
     this.undoStack = [];
     this.redoStack = [];
@@ -228,6 +251,7 @@ export class Store {
     if (!s) return;
     if (s.type === 'room' && !this.room(s.id)) this.selection = null;
     if (s.type === 'label' && !this.plan.labels.find(l => l.id === s.id)) this.selection = null;
+    if (s.type === 'marker' && !this.marker(s.id)) this.selection = null;
     if ((s.type === 'door' || s.type === 'vertex') && !this.room(s.roomId)) this.selection = null;
     if (s.type === 'door' && !this.room(s.roomId)?.doors.find(d => d.id === s.id)) this.selection = null;
   }
@@ -243,6 +267,7 @@ export class Store {
 
   room(id) { return this.plan.rooms.find(r => r.id === id); }
   label(id) { return this.plan.labels.find(l => l.id === id); }
+  marker(id) { return this.plan.markers.find(m => m.id === id); }
 
   scheduleSave() {
     clearTimeout(this.saveTimer);
@@ -255,7 +280,7 @@ export class Store {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return false;
       const plan = normalizePlan(JSON.parse(raw));
-      if (!plan.rooms.length && !plan.labels.length) return false;
+      if (!plan.rooms.length && !plan.labels.length && !plan.markers.length) return false;
       this.plan = plan;
       return true;
     } catch { return false; }

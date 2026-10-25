@@ -29,6 +29,7 @@
     <symbol id="i-zonepoly" viewBox="0 0 24 24"><path d="M6 5h9l4 5-3 9H7l-2-6z" stroke-dasharray="3 2.5"/></symbol>
     <symbol id="i-door" viewBox="0 0 24 24"><path d="M3 19h6M15 19h6M9 19V8a6 6 0 0 1 6 6v5"/></symbol>
     <symbol id="i-label" viewBox="0 0 24 24"><circle cx="8" cy="7" r="1.6" fill="currentColor" stroke="none"/><circle cx="8" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="8" cy="17" r="1.6" fill="currentColor" stroke="none"/><circle cx="14" cy="7" r="1.6" fill="currentColor" stroke="none"/><circle cx="14" cy="12" r="1.6" fill="currentColor" stroke="none" opacity=".3"/><circle cx="14" cy="17" r="1.6" fill="currentColor" stroke="none" opacity=".3"/></symbol>
+    <symbol id="i-marker" viewBox="0 0 24 24"><circle cx="12" cy="10" r="3.2" fill="currentColor" stroke="none"/><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/></symbol>
     <symbol id="i-hand" viewBox="0 0 24 24"><path d="M8 12V6.5a1.5 1.5 0 0 1 3 0V11m0-5.5v-1a1.5 1.5 0 0 1 3 0V11m0-4.5a1.5 1.5 0 0 1 3 0V12m0-2.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-1.8a6 6 0 0 1-4.9-2.5L4.4 14.7a1.6 1.6 0 0 1 2.5-2L8 14"/></symbol>
     <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></symbol>
     <symbol id="i-redo" viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></symbol>
@@ -89,6 +90,7 @@
       <span class="rail-sep"></span>
       <button class="tool" data-tool="door" title="Tür in eine Wand setzen (T)"><svg><use href="#i-door"/></svg><kbd>T</kbd></button>
       <button class="tool" data-tool="label" title="Freie Beschriftung setzen (L)"><svg><use href="#i-label"/></svg><kbd>L</kbd></button>
+      <button class="tool" data-tool="marker" title="Orientierungsmarker setzen (M): Standort, Pfeil, Treffpunkt"><svg><use href="#i-marker"/></svg><kbd>M</kbd></button>
       <span class="rail-sep"></span>
       <button class="tool" data-tool="pan" title="Ansicht verschieben (H oder Leertaste halten)"><svg><use href="#i-hand"/></svg><kbd>H</kbd></button>
       <div class="rail-bottom">
@@ -181,6 +183,8 @@
       </ul>
       <h3>Beschriftung</h3>
       <p>Jeder Raum hat einen Namen und optional eine Kurzbezeichnung, die auf dem Plan steht. Die Brailleschrift wird automatisch erzeugt (Basisschrift, buchstabengetreu; alternativ Vollschrift mit Lautgruppen). Lange Namen passen oft nicht in kleine Räume – dann Kurzbezeichnung vergeben und die <strong>Legende</strong> mitdrucken. Die Maße folgen DIN 32976 / Marburg Medium: Punktabstand 2,5 mm, Zeichenabstand 6 mm, Zeilenabstand 10 mm.</p>
+      <h3>Orientierungsmarker</h3>
+      <p>Tastbare Symbole mit fester Größe: <strong>Vollkreis</strong> für den Standort („Sie sind hier“), <strong>Pfeil</strong> für Eingang oder Laufrichtung (drehbar) und <strong>Quadrat</strong> für einen Treffpunkt. Die Bedeutung ist frei wählbar und erscheint mit dem Symbol in der Legende. Der Standort gehört an die Stelle, an der der Plan später hängt.</p>
       <h3>Drucken</h3>
       <ul>
         <li><strong>3MF, zweifarbig</strong>: Grundplatte und erhabene Teile (Wände, Punkte, Schrift) sind getrennte Teile eines Objekts. In Bambu Studio jedem Teil ein Filament zuweisen. Erscheinen die Teile als einzelne Objekte: alle markieren, Rechtsklick, „Zusammenfügen“.</li>
@@ -190,7 +194,7 @@
         <li>Empfohlen: 0,2 mm Schichthöhe, 0,4 mm Düse, Wände mindestens 1,2 mm dick. Punkte und Schrift mit 100 % Füllung oben.</li>
       </ul>
       <h3>Tastaturkürzel</h3>
-      <p><kbd>V</kbd> Auswählen · <kbd>R</kbd> Rechteck · <kbd>P</kbd> Polygon · <kbd>B</kbd>/<kbd>N</kbd> Bereich · <kbd>T</kbd> Tür · <kbd>L</kbd> Beschriftung · <kbd>H</kbd> Hand · <kbd>Entf</kbd> Löschen · <kbd>Strg</kbd>+<kbd>Z</kbd>/<kbd>Y</kbd> Verlauf · <kbd>0</kbd> Alles anzeigen · <kbd>Esc</kbd> Abbrechen</p>
+      <p><kbd>V</kbd> Auswählen · <kbd>R</kbd> Rechteck · <kbd>P</kbd> Polygon · <kbd>B</kbd>/<kbd>N</kbd> Bereich · <kbd>T</kbd> Tür · <kbd>L</kbd> Beschriftung · <kbd>M</kbd> Marker · <kbd>H</kbd> Hand · <kbd>Entf</kbd> Löschen · <kbd>Strg</kbd>+<kbd>Z</kbd>/<kbd>Y</kbd> Verlauf · <kbd>0</kbd> Alles anzeigen · <kbd>Esc</kbd> Abbrechen</p>
     </div>
   </dialog>
 
