@@ -18,6 +18,7 @@ Läuft komplett im Browser, ohne Installation und ohne Server. Pläne werden aut
   - **3MF** mit Grundplatte und erhabenen Teilen als getrennten Teilen eines Objekts (je ein Filament zuweisen) oder als ein Körper.
   - **STL** als einzelne Datei oder ZIP mit mehreren Dateien.
   - **Gesamtplatte**, **Räume einzeln** (Puzzleteile mit eigenem Boden, z. B. in verschiedenen Farben) oder nur ein ausgewählter Raum.
+- **Rahmen zum Einlegen:** Wanne mit Rückwand und Rand, automatisch nach Druckbett in Kacheln geteilt, Schwalbenschwanz-Verbinder an den Schnittkanten, Schlüssellöcher in der Rückwand zum Aufhängen. Platte oder Raumteile werden eingelegt und verklebt.
 - **Maßstab** frei wählbar; „Einpassen“ wählt den kleinsten Maßstab, bei dem die Platte auf das Druckbett passt (Bambu Lab A1 mini, P1/X1/A1, H2D oder eigenes Maß).
 
 ## Braille-Maße

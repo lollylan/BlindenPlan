@@ -206,3 +206,56 @@ export function roundedRect(x, y, w, h, r, segs = 6) {
 export function bboxOverlap(a, b) {
   return a.minX < b.maxX && a.maxX > b.minX && a.minY < b.maxY && a.maxY > b.minY;
 }
+
+/** Abgerundetes Rechteck als Schleife mit fester Punktzahl (segs je Ecke), ohne Bereinigung – für 1:1-Zuordnung zweier Schleifen. */
+export function roundedRectLoop(x, y, w, h, r, segs = 8) {
+  r = Math.max(1e-4, Math.min(r, w / 2, h / 2));
+  const pts = [];
+  const corners = [
+    [x + w - r, y + r, -Math.PI / 2],
+    [x + w - r, y + h - r, 0],
+    [x + r, y + h - r, Math.PI / 2],
+    [x + r, y + r, Math.PI],
+  ];
+  for (const [cx, cy, a0] of corners) {
+    for (let s = 0; s <= segs; s++) {
+      const a = a0 + (Math.PI / 2) * (s / segs);
+      pts.push({ x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) });
+    }
+  }
+  return pts;
+}
+
+/** Kreisbogenpunkte von a0 bis a1 (Bogenmaß), inklusive Endpunkte. */
+export function arcPoints(cx, cy, r, a0, a1, segs = 8) {
+  const pts = [];
+  for (let s = 0; s <= segs; s++) {
+    const a = a0 + (a1 - a0) * (s / segs);
+    pts.push({ x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) });
+  }
+  return pts;
+}
+
+/** Sutherland–Hodgman: Polygon an einem achsenparallelen Rechteck beschneiden. */
+export function clipPolygonRect(poly, x0, y0, x1, y1) {
+  const clipEdge = (pts, inside, intersect) => {
+    const out = [];
+    for (let i = 0; i < pts.length; i++) {
+      const cur = pts[i], prev = pts[(i - 1 + pts.length) % pts.length];
+      const ci = inside(cur), pi = inside(prev);
+      if (ci) {
+        if (!pi) out.push(intersect(prev, cur));
+        out.push(cur);
+      } else if (pi) out.push(intersect(prev, cur));
+    }
+    return out;
+  };
+  const ix = (a, b, x) => ({ x, y: a.y + (b.y - a.y) * ((x - a.x) / (b.x - a.x || 1e-12)) });
+  const iy = (a, b, y) => ({ x: a.x + (b.x - a.x) * ((y - a.y) / (b.y - a.y || 1e-12)), y });
+  let p = poly;
+  if (isFinite(x0)) p = clipEdge(p, q => q.x >= x0, (a, b) => ix(a, b, x0));
+  if (isFinite(x1)) p = clipEdge(p, q => q.x <= x1, (a, b) => ix(a, b, x1));
+  if (isFinite(y0)) p = clipEdge(p, q => q.y >= y0, (a, b) => iy(a, b, y0));
+  if (isFinite(y1)) p = clipEdge(p, q => q.y <= y1, (a, b) => iy(a, b, y1));
+  return cleanPolygon(p, 1e-6);
+}

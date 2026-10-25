@@ -3,6 +3,7 @@ import { layoutLabel, displayText } from './labels.js';
 import { ROOM_COLORS, BEDS, bedSize, plateInfo, planExtent, emptyPlan, examplePlan, normalizePlan, defaultSettings } from './state.js';
 import { buildModel, legendEntries, hasTextProvider } from './model3d.js';
 import { stlBinary, threeMF, zipFiles, download, safeName } from './exporters.js';
+import { buildFrame, frameLayout } from './frame.js';
 import * as G from './geom.js';
 
 const $ = (id) => document.getElementById(id);
@@ -219,6 +220,7 @@ export class UI {
       case 'brailleDefaults': st.update(p => { Object.assign(p.settings.braille, { dotDiameter: 1.5, dotHeight: 0.6, dotPitch: 2.5, cellPitch: 6.0, linePitch: 10.0 }); }); break;
       case 'resetSettings': if (confirm('Alle Maße auf die Standardwerte zurücksetzen? Der Grundriss bleibt erhalten.')) st.update(p => { const name = p.name; p.settings = defaultSettings(); p.name = name; }); break;
       case 'export': this.doExport(); break;
+      case 'exportFrame': this.doExportFrame(); break;
       case 'exportOpt': this.exportOpts[btn.dataset.key] = btn.dataset.value === 'true' ? true : btn.dataset.value === 'false' ? false : btn.dataset.value; this.renderExport(); break;
       case 'toggleLegend': this.exportOpts.legend = !this.exportOpts.legend; this.renderExport(); break;
       case 'view3d': this.setView('3d'); break;
@@ -537,6 +539,8 @@ export class UI {
       if (sd && document.activeElement !== sd) sd.value = Math.round(1000 / st.plan.settings.scale * 10) / 10;
       const pi = this.panel.querySelector('#plateInfoLine');
       if (pi) pi.innerHTML = this.plateInfoHTML();
+      const fi = this.panel.querySelector('#frameInfoLine');
+      if (fi) fi.innerHTML = this.frameInfoHTML();
     }
     if (this.tab === 'export') {
       const info = this.panel.querySelector('#exportInfo');
@@ -558,6 +562,15 @@ export class UI {
     const fits = info.width <= bed.w && info.height <= bed.h;
     const fitsRot = info.width <= bed.h && info.height <= bed.w;
     return `<span>Grundplatte <b>${Math.round(info.width)} × ${Math.round(info.height)} mm</b></span><span style="color:${fits || fitsRot ? 'var(--ok)' : 'var(--danger)'}">${fits ? 'passt' : fitsRot ? 'passt gedreht' : 'zu groß'} auf ${esc(bed.name)}</span>`;
+  }
+
+  frameInfoHTML() {
+    const plan = this.store.plan;
+    const info = plateInfo(plan);
+    if (!info.ext) return '<span>Noch keine Räume gezeichnet.</span>';
+    const L = frameLayout(plan, info.width, info.height);
+    const n = L.cols * L.rows;
+    return `<span>Außenmaß <b>${Math.round(L.W)} × ${Math.round(L.H)} mm</b></span><span>${n === 1 ? 'ein Stück' : `${L.cols} × ${L.rows} Kacheln, je ${Math.round(L.tileW)} × ${Math.round(L.tileH)} mm`}</span><span style="color:${L.fitsBed ? 'var(--ok)' : 'var(--danger)'}">${L.fitsBed ? 'passt' : 'zu groß'} für ${esc(L.bed.name)}</span>`;
   }
 
   renderPlan() {
@@ -626,10 +639,27 @@ export class UI {
         </div>
       </div>
       <div class="section">
+        <div class="section-title"><span>Rahmen (Wanne zum Einlegen)</span></div>
+        <div class="row">
+          ${this.num('Randbreite', 'settings.frame.rimW', s.frame.rimW, { step: 0.5, min: 3, max: 30 })}
+          ${this.num('Rückwand', 'settings.frame.backT', s.frame.backT, { step: 0.5, min: 1.5, max: 10, help: 'Ab 2,5 mm passen Schlüssellöcher hinein.' })}
+        </div>
+        <div class="row">
+          ${this.num('Rand über Plattenoberkante', 'settings.frame.rimOver', s.frame.rimOver, { step: 0.5, min: -2, max: 10, help: '0 = bündig mit der Platte.' })}
+          ${this.num('Spiel zur Platte', 'settings.frame.clearance', s.frame.clearance, { step: 0.1, min: 0, max: 2 })}
+        </div>
+        <div class="field"><label for="f-fsplit">Teilung</label><select class="input" id="f-fsplit" data-path="settings.frame.split" data-type="select" data-target="plan"><option value="auto" ${s.frame.split !== 'manual' ? 'selected' : ''}>Automatisch nach Druckbett</option><option value="manual" ${s.frame.split === 'manual' ? 'selected' : ''}>Manuell</option></select></div>
+        ${s.frame.split === 'manual' ? `<div class="row">${this.num('Spalten', 'settings.frame.cols', s.frame.cols, { unit: '', step: 1, min: 1, max: 6 })}${this.num('Reihen', 'settings.frame.rows', s.frame.rows, { unit: '', step: 1, min: 1, max: 6 })}</div>` : ''}
+        <div class="field"><label for="f-fjoint">Verbindung der Kacheln</label><select class="input" id="f-fjoint" data-path="settings.frame.joint" data-type="select" data-target="plan"><option value="dovetail" ${s.frame.joint !== 'none' ? 'selected' : ''}>Schwalbenschwanz (stecken und kleben)</option><option value="none" ${s.frame.joint === 'none' ? 'selected' : ''}>Stumpf (nur kleben)</option></select></div>
+        <div class="checks"><label class="check"><input type="checkbox" data-path="settings.frame.keyholes" data-type="checkbox" data-target="plan" ${s.frame.keyholes ? 'checked' : ''}> Schlüssellöcher zum Aufhängen (oberste Reihe)</label></div>
+        <div class="meta" id="frameInfoLine">${this.frameInfoHTML()}</div>
+      </div>
+      <div class="section">
         <div class="section-title"><span>Farben</span><span class="hint">Vorschau und 3MF</span></div>
         <div class="row">
           <div class="field"><label>Grundplatte</label><div class="color-field"><input type="color" value="${esc(s.colors.base)}" data-path="settings.colors.base" data-type="color" data-target="plan"><span class="help">${esc(s.colors.base)}</span></div></div>
           <div class="field"><label>Erhabene Teile</label><div class="color-field"><input type="color" value="${esc(s.colors.raised)}" data-path="settings.colors.raised" data-type="color" data-target="plan"><span class="help">${esc(s.colors.raised)}</span></div></div>
+          <div class="field"><label>Rahmen</label><div class="color-field"><input type="color" value="${esc(s.colors.frame || '#cbc3b4')}" data-path="settings.colors.frame" data-type="color" data-target="plan"><span class="help">${esc(s.colors.frame || '#cbc3b4')}</span></div></div>
         </div>
         <div class="help">Kontrastreiche Paare helfen Menschen mit Sehrest: helle Platte, dunkle Wände und Punkte.</div>
       </div>
@@ -695,6 +725,12 @@ export class UI {
       <div class="export-info" id="exportInfo">${this.exportInfoHTML()}</div>
       ${this.buildWarnings.length ? this.warningsHTML(this.buildWarnings.map(t => ({ kind: 'warn', text: t }))) : ''}
       <button class="btn primary block" id="btnDoExport" data-action="export" ${none ? 'disabled' : ''}>${ICON('i-download')}<span>${o.format === '3mf' ? '3MF' : 'STL'} herunterladen</span></button>
+      <div class="section" style="margin-top:22px">
+        <div class="section-title"><span>Rahmen zum Einlegen</span><span class="hint">Maße im Tab „Plan“</span></div>
+        <div class="meta" style="margin-bottom:10px">${none ? '<span>Erst Räume zeichnen.</span>' : this.frameInfoHTML()}</div>
+        <div class="help" style="margin-bottom:10px">Wanne mit Rückwand und Rand; Platte oder Raumteile einlegen und verkleben. Kacheln mit Schwalbenschwanz zusammenstecken, Schlüssellöcher auf der Rückseite zum Aufhängen. Rückwand nach unten drucken.</div>
+        <button class="btn block" id="btnDoExportFrame" data-action="exportFrame" ${none ? 'disabled' : ''}>${ICON('i-download')}<span>Rahmen als ${o.format === '3mf' ? '3MF' : 'STL'} herunterladen</span></button>
+      </div>
       <div class="help" style="margin-top:10px">Tipp: Erst in der <button class="btn small" data-action="view3d" style="vertical-align:middle">${ICON('i-cube')}<span>3D-Vorschau</span></button> prüfen. Datei danach in Bambu Studio öffnen oder importieren.</div>`;
   }
 
@@ -739,6 +775,35 @@ export class UI {
     } catch (e) {
       console.error(e);
       this.toast(`Export fehlgeschlagen: ${e.message}`, 'danger', 6000);
+    } finally {
+      btn?.classList.remove('loading');
+    }
+  }
+
+  async doExportFrame() {
+    const btn = $('btnDoExportFrame');
+    btn?.classList.add('loading');
+    await new Promise(r => setTimeout(r, 30));
+    try {
+      const plan = this.store.plan;
+      const info = plateInfo(plan);
+      if (!info.ext) { this.toast('Erst Räume zeichnen.', 'warn'); return; }
+      const fr = buildFrame(plan, info.width, info.height);
+      this.buildWarnings = fr.warnings;
+      const base = `blindenplan-${safeName(plan.name)}-rahmen`;
+      if (this.exportOpts.format === '3mf') {
+        download(threeMF(fr.pieces, { split: false, title: `${plan.name} – Rahmen`, raisedColor: plan.settings.colors.frame }), `${base}.3mf`, 'model/3mf');
+      } else {
+        const files = fr.pieces.map(p => ({ name: `${safeName(p.name)}.stl`, data: stlBinary(p.parts.map(x => x.tris), p.name) }));
+        if (files.length === 1) download(files[0].data, `${base}.stl`, 'model/stl');
+        else download(zipFiles(files), `${base}-stl.zip`, 'application/zip');
+      }
+      const n = fr.pieces.length;
+      this.toast(`Rahmen exportiert: ${n === 1 ? 'ein Stück' : `${n} Kacheln`}, ${Math.round(fr.layout.W)} × ${Math.round(fr.layout.H)} mm.`, 'ok');
+      this.renderExport();
+    } catch (e) {
+      console.error(e);
+      this.toast(`Rahmen-Export fehlgeschlagen: ${e.message}`, 'danger', 6000);
     } finally {
       btn?.classList.remove('loading');
     }

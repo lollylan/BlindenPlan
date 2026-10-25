@@ -80,7 +80,8 @@ export class Preview {
         geo.setAttribute('position', new THREE.BufferAttribute(part.tris, 3));
         geo.computeVertexNormals();
         let color;
-        if (opts.colorMode === 'rooms') {
+        if (part.kind === 'frame') color = opts.frameColor || '#cbc3b4';
+        else if (opts.colorMode === 'rooms') {
           if (part.kind === 'base') color = (piece.id === 'plan' || piece.id === 'legend') ? opts.baseColor : lighten(piece.color, 0.45);
           else color = part.color || opts.raisedColor;
         } else {

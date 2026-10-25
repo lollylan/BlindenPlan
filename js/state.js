@@ -26,7 +26,8 @@ export function defaultSettings() {
     braille: { dotDiameter: 1.5, dotHeight: 0.6, dotPitch: 2.5, cellPitch: 6.0, linePitch: 10.0, system: 'basis', capitals: false },
     text: { enabled: true, size: 5.5, height: 0.6 },
     legend: { enabled: true },
-    colors: { base: '#e9e4da', raised: '#1f2a44' },
+    colors: { base: '#e9e4da', raised: '#1f2a44', frame: '#cbc3b4' },
+    frame: { rimW: 7, backT: 4, rimOver: 0, clearance: 0.4, split: 'auto', cols: 1, rows: 1, joint: 'dovetail', keyholes: true },
   };
 }
 
@@ -101,7 +102,7 @@ export function normalizePlan(raw) {
   d.scale = num(s.scale, d.scale);
   d.bed = typeof s.bed === 'string' ? s.bed : d.bed;
   d.bedW = num(s.bedW, d.bedW); d.bedH = num(s.bedH, d.bedH);
-  for (const grp of ['plate', 'wall', 'zone', 'door', 'braille', 'text', 'legend', 'colors']) {
+  for (const grp of ['plate', 'wall', 'zone', 'door', 'braille', 'text', 'legend', 'colors', 'frame']) {
     if (s[grp] && typeof s[grp] === 'object') {
       for (const k of Object.keys(d[grp])) {
         const v = s[grp][k];

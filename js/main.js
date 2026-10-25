@@ -5,6 +5,7 @@ import { UI } from './ui.js';
 import { setTextMeasurer } from './labels.js';
 import { setTextProvider, buildModel } from './model3d.js';
 import { bedSize } from './state.js';
+import { buildFrame, liftPieces } from './frame.js';
 
 const store = new Store();
 store.loadSaved();
@@ -26,7 +27,7 @@ const previewFallback = document.getElementById('previewFallback');
 const previewStats = document.getElementById('previewStats');
 let preview = null;
 let previewFailed = false;
-const previewOpts = { colorMode: 'split', scope: 'whole', legend: false };
+const previewOpts = { colorMode: 'split', scope: 'whole', legend: false, frame: false };
 
 const previewCtl = {
   visible: false,
@@ -51,9 +52,18 @@ const previewCtl = {
     if (!preview) return;
     const plan = store.plan;
     const model = buildModel(plan, { scope: previewOpts.scope, overlap: 0, legend: previewOpts.legend });
-    preview.setModel(model, { colorMode: previewOpts.colorMode, baseColor: plan.settings.colors.base, raisedColor: plan.settings.colors.raised, bed: bedSize(plan.settings) });
+    let pieces = model.pieces;
+    let frameInfo = '';
+    if (previewOpts.frame && model.pieces.length) {
+      const fr = buildFrame(plan, model.info.plateWidth, model.info.plateHeight);
+      pieces = [...liftPieces(model.pieces, fr.layout.backT), ...fr.pieces];
+      frameInfo = ` · Rahmen ${Math.round(fr.layout.W)} × ${Math.round(fr.layout.H)} mm, ${fr.layout.cols} × ${fr.layout.rows} Kachel${fr.layout.cols * fr.layout.rows === 1 ? '' : 'n'}`;
+      model.warnings.push(...fr.warnings);
+    }
+    preview.setModel({ pieces }, { colorMode: previewOpts.colorMode, baseColor: plan.settings.colors.base, raisedColor: plan.settings.colors.raised, frameColor: plan.settings.colors.frame, bed: bedSize(plan.settings) });
     const dims = model.pieces.length ? `${Math.round(model.info.plateWidth)} × ${Math.round(model.info.plateHeight)} mm` : '';
-    previewStats.textContent = `${model.pieces.length} Teil${model.pieces.length === 1 ? '' : 'e'} · ${model.info.triangles.toLocaleString('de-DE')} Dreiecke${dims ? ' · ' + dims : ''}`;
+    const tri = pieces.reduce((n, p) => n + p.triangles, 0);
+    previewStats.textContent = `${pieces.length} Teil${pieces.length === 1 ? '' : 'e'} · ${tri.toLocaleString('de-DE')} Dreiecke${dims ? ' · ' + dims : ''}${frameInfo}`;
     if (model.warnings.length) ui?.showWarnings(model.warnings);
   },
   setOption(k, v) { previewOpts[k] = v; this.rebuild(); },
@@ -68,6 +78,7 @@ previewEl.querySelectorAll('[data-scope]').forEach(b => b.addEventListener('clic
   previewCtl.setOption('scope', b.dataset.scope);
 }));
 document.getElementById('previewLegend').addEventListener('change', (e) => previewCtl.setOption('legend', e.target.checked));
+document.getElementById('previewFrame').addEventListener('change', (e) => previewCtl.setOption('frame', e.target.checked));
 document.getElementById('btnRebuild').addEventListener('click', () => previewCtl.rebuild());
 
 ui = new UI(store, editor, previewCtl);
