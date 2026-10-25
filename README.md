@@ -37,7 +37,7 @@ Die Vollschrift wird automatisch mit den Lautgruppen au, äu, eu, ei, ch, sch, s
 
 Reine Web-App ohne Build-Schritt: `index.html`, `css/app.css`, `js/*.js` (ES-Module). Three.js wird vom CDN geladen (nur für 3D-Vorschau und Profilschrift). Lokal testen z. B. mit `python -m http.server 8765` und http://localhost:8765 öffnen.
 
-Deployment über GitHub Actions (`.github/workflows/pages.yml`) auf GitHub Pages; `.nojekyll` verhindert den Jekyll-Build.
+Deployment über GitHub Pages direkt vom Branch `main` (Einstellungen → Pages → „Deploy from a branch“, Ordner `/`). Die Datei `.nojekyll` sorgt dafür, dass GitHub die Seite ohne Jekyll-Build eins zu eins ausliefert – ohne sie scheitert der Build an den Unterordnern und ES-Modulen.
 
 ## Lizenz
 
