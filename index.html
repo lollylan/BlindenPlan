@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BlindenPlan – Tastbare Gebäudepläne</title>
+  <meta name="description" content="Zeichne Grundrisse, beschrifte sie in Brailleschrift und exportiere tastbare 3D-Modelle als STL oder 3MF für den 3D-Druck.">
+  <meta name="theme-color" content="#efebe4">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230e6b63'/%3E%3Ccircle cx='11' cy='10' r='3' fill='%23fff'/%3E%3Ccircle cx='21' cy='10' r='3' fill='%23fff'/%3E%3Ccircle cx='11' cy='22' r='3' fill='%23fff'/%3E%3Ccircle cx='21' cy='22' r='3' fill='%23fff' fill-opacity='.35'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/app.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <svg class="sprite" aria-hidden="true" focusable="false">
+    <symbol id="i-select" viewBox="0 0 24 24"><path d="M5 4l14 7-6.5 1.8L10 19z"/></symbol>
+    <symbol id="i-rect" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="1"/></symbol>
+    <symbol id="i-poly" viewBox="0 0 24 24"><path d="M6 5h9l4 5-3 9H7l-2-6z"/><circle cx="6" cy="5" r="1.4" fill="currentColor" stroke="none"/><circle cx="15" cy="5" r="1.4" fill="currentColor" stroke="none"/><circle cx="19" cy="10" r="1.4" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-zone" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="1" stroke-dasharray="3 2.5"/><path d="M8 15l8-6"/></symbol>
+    <symbol id="i-zonepoly" viewBox="0 0 24 24"><path d="M6 5h9l4 5-3 9H7l-2-6z" stroke-dasharray="3 2.5"/></symbol>
+    <symbol id="i-door" viewBox="0 0 24 24"><path d="M3 19h6M15 19h6M9 19V8a6 6 0 0 1 6 6v5"/></symbol>
+    <symbol id="i-label" viewBox="0 0 24 24"><circle cx="8" cy="7" r="1.6" fill="currentColor" stroke="none"/><circle cx="8" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="8" cy="17" r="1.6" fill="currentColor" stroke="none"/><circle cx="14" cy="7" r="1.6" fill="currentColor" stroke="none"/><circle cx="14" cy="12" r="1.6" fill="currentColor" stroke="none" opacity=".3"/><circle cx="14" cy="17" r="1.6" fill="currentColor" stroke="none" opacity=".3"/></symbol>
+    <symbol id="i-hand" viewBox="0 0 24 24"><path d="M8 12V6.5a1.5 1.5 0 0 1 3 0V11m0-5.5v-1a1.5 1.5 0 0 1 3 0V11m0-4.5a1.5 1.5 0 0 1 3 0V12m0-2.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-1.8a6 6 0 0 1-4.9-2.5L4.4 14.7a1.6 1.6 0 0 1 2.5-2L8 14"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></symbol>
+    <symbol id="i-redo" viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11m0 0l-4-4m4 4l4-4M5 19h14"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15V4m0 0L8 8m4-4l4 4M5 19h14"/></symbol>
+    <symbol id="i-new" viewBox="0 0 24 24"><path d="M13 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9z"/><path d="M13 3v6h6M12 12v6M9 15h6"/></symbol>
+    <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/></symbol>
+    <symbol id="i-cube" viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></symbol>
+    <symbol id="i-plan" viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><path d="M4 12h9M13 4v16M13 12h7"/></symbol>
+    <symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+    <symbol id="i-example" viewBox="0 0 24 24"><path d="M4 5h16v14H4z"/><path d="M4 11h8M12 5v9M12 14h8"/><circle cx="8" cy="8" r=".9" fill="currentColor" stroke="none"/><circle cx="16" cy="9" r=".9" fill="currentColor" stroke="none"/><circle cx="8" cy="16" r=".9" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+    <symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17.5v.1"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 8v.1"/></symbol>
+    <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/></symbol>
+    <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.7M12 17v.1"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 4l8 4-8 4-8-4z"/><path d="M4 12l8 4 8-4M4 16l8 4 8-4"/></symbol>
+  </svg>
+
+  <div class="app" id="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+        <span class="brand-name">BlindenPlan</span>
+      </div>
+      <input class="project-name" id="projectName" type="text" value="Neuer Plan" aria-label="Name des Plans" spellcheck="false">
+      <div class="topbar-group" role="group" aria-label="Datei">
+        <button class="btn icon" id="btnNew" title="Neuer Plan"><svg><use href="#i-new"/></svg></button>
+        <button class="btn icon" id="btnOpen" title="Plan öffnen (JSON)"><svg><use href="#i-upload"/></svg></button>
+        <button class="btn icon" id="btnSave" title="Plan speichern (JSON) · Strg+S"><svg><use href="#i-save"/></svg></button>
+        <button class="btn icon" id="btnExample" title="Beispielplan laden"><svg><use href="#i-example"/></svg></button>
+        <input type="file" id="fileInput" accept=".json,application/json" hidden>
+      </div>
+      <div class="topbar-group" role="group" aria-label="Verlauf">
+        <button class="btn icon" id="btnUndo" title="Rückgängig · Strg+Z"><svg><use href="#i-undo"/></svg></button>
+        <button class="btn icon" id="btnRedo" title="Wiederholen · Strg+Y"><svg><use href="#i-redo"/></svg></button>
+      </div>
+      <div class="spacer"></div>
+      <div class="segmented" role="tablist" aria-label="Ansicht">
+        <button class="seg active" role="tab" id="viewPlan" aria-selected="true"><svg><use href="#i-plan"/></svg><span>Zeichnen</span></button>
+        <button class="seg" role="tab" id="view3d" aria-selected="false"><svg><use href="#i-cube"/></svg><span>3D-Vorschau</span></button>
+      </div>
+      <button class="btn icon" id="btnHelp" title="Hilfe und Hinweise"><svg><use href="#i-help"/></svg></button>
+      <button class="btn primary" id="btnExport"><svg><use href="#i-download"/></svg><span>Exportieren</span></button>
+    </header>
+
+    <nav class="rail" aria-label="Werkzeuge">
+      <button class="tool active" data-tool="select" title="Auswählen und verschieben (V)"><svg><use href="#i-select"/></svg><kbd>V</kbd></button>
+      <button class="tool" data-tool="rect" title="Raum als Rechteck zeichnen (R)"><svg><use href="#i-rect"/></svg><kbd>R</kbd></button>
+      <button class="tool" data-tool="poly" title="Raum als Polygon zeichnen (P)"><svg><use href="#i-poly"/></svg><kbd>P</kbd></button>
+      <span class="rail-sep"></span>
+      <button class="tool" data-tool="zone" title="Bereich ohne Wände als Rechteck (B)"><svg><use href="#i-zone"/></svg><kbd>B</kbd></button>
+      <button class="tool" data-tool="zonepoly" title="Bereich ohne Wände als Polygon (N)"><svg><use href="#i-zonepoly"/></svg><kbd>N</kbd></button>
+      <span class="rail-sep"></span>
+      <button class="tool" data-tool="door" title="Tür in eine Wand setzen (T)"><svg><use href="#i-door"/></svg><kbd>T</kbd></button>
+      <button class="tool" data-tool="label" title="Freie Beschriftung setzen (L)"><svg><use href="#i-label"/></svg><kbd>L</kbd></button>
+      <span class="rail-sep"></span>
+      <button class="tool" data-tool="pan" title="Ansicht verschieben (H oder Leertaste halten)"><svg><use href="#i-hand"/></svg><kbd>H</kbd></button>
+      <div class="rail-bottom">
+        <button class="tool" id="btnZoomIn" title="Vergrößern (+)"><svg><use href="#i-plus"/></svg></button>
+        <button class="tool" id="btnZoomOut" title="Verkleinern (−)"><svg><use href="#i-minus"/></svg></button>
+        <button class="tool" id="btnFit" title="Alles anzeigen (0)"><svg><use href="#i-fit"/></svg></button>
+      </div>
+    </nav>
+
+    <main class="stage" id="stage">
+      <canvas id="editor" tabindex="0" aria-label="Zeichenfläche für den Grundriss"></canvas>
+      <div class="stage-hint" id="stageHint" hidden></div>
+      <div class="empty" id="emptyState">
+        <div class="empty-card">
+          <h2>Noch kein Grundriss</h2>
+          <p>Wähle links das Rechteck-Werkzeug und ziehe den ersten Raum auf. Maße werden in Metern eingegeben, der Maßstab bestimmt später die Größe des Drucks.</p>
+          <div class="empty-actions">
+            <button class="btn" id="emptyRect"><svg><use href="#i-rect"/></svg><span>Ersten Raum zeichnen</span></button>
+            <button class="btn primary" id="emptyExample"><svg><use href="#i-example"/></svg><span>Beispielplan laden</span></button>
+          </div>
+        </div>
+      </div>
+      <div class="preview" id="preview" hidden>
+        <div class="preview-toolbar">
+          <div class="segmented small" role="group" aria-label="Farbdarstellung">
+            <button class="seg active" data-colormode="split">Zweifarbig</button>
+            <button class="seg" data-colormode="rooms">Pro Raum</button>
+          </div>
+          <div class="segmented small" role="group" aria-label="Umfang">
+            <button class="seg active" data-scope="whole">Gesamtplatte</button>
+            <button class="seg" data-scope="rooms">Räume einzeln</button>
+          </div>
+          <label class="check"><input type="checkbox" id="previewLegend"> Legende</label>
+          <button class="btn small" id="btnRebuild"><svg><use href="#i-rotate"/></svg><span>Aktualisieren</span></button>
+          <span class="preview-stats" id="previewStats"></span>
+        </div>
+        <div class="preview-canvas" id="previewCanvas"></div>
+        <div class="preview-fallback" id="previewFallback" hidden></div>
+      </div>
+    </main>
+
+    <aside class="panel" id="panel">
+      <div class="tabs" role="tablist" aria-label="Einstellungen">
+        <button class="tab active" role="tab" data-tab="selection" aria-selected="true">Auswahl</button>
+        <button class="tab" role="tab" data-tab="plan" aria-selected="false">Plan</button>
+        <button class="tab" role="tab" data-tab="export" aria-selected="false">Export</button>
+      </div>
+      <div class="tabpanel" id="tab-selection" role="tabpanel"></div>
+      <div class="tabpanel" id="tab-plan" role="tabpanel" hidden></div>
+      <div class="tabpanel" id="tab-export" role="tabpanel" hidden></div>
+    </aside>
+
+    <footer class="statusbar">
+      <span id="statusCursor" class="mono">x 0,00 m · y 0,00 m</span>
+      <span class="status-sep"></span>
+      <label class="status-field">Raster
+        <select id="snapSelect" aria-label="Rasterweite">
+          <option value="0.05">5 cm</option>
+          <option value="0.1" selected>10 cm</option>
+          <option value="0.25">25 cm</option>
+          <option value="0.5">50 cm</option>
+          <option value="0">aus</option>
+        </select>
+      </label>
+      <span class="status-sep"></span>
+      <span id="statusScale" class="mono"></span>
+      <span class="status-sep"></span>
+      <span id="statusPlate"></span>
+      <span class="spacer"></span>
+      <span id="statusZoom" class="mono">100 %</span>
+    </footer>
+  </div>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+
+  <dialog class="dialog" id="helpDialog">
+    <div class="dialog-head">
+      <h2>So funktioniert BlindenPlan</h2>
+      <button class="btn icon" id="helpClose" title="Schließen"><svg><use href="#i-close"/></svg></button>
+    </div>
+    <div class="dialog-body">
+      <h3>Zeichnen</h3>
+      <ul>
+        <li><strong>Raum (Rechteck)</strong>: Mit gedrückter Maustaste aufziehen. <strong>Raum (Polygon)</strong>: Ecken nacheinander anklicken, zum Schließen auf den ersten Punkt klicken oder Enter drücken.</li>
+        <li><strong>Bereich</strong>: Wie ein Raum, aber ohne Wände. Er bekommt nur eine flache, gestrichelte Tastlinie und eine Beschriftung – zum Beispiel für Anmeldung und Wartebereich im selben Raum.</li>
+        <li><strong>Tür</strong>: Auf eine Wand klicken. Türen sind Lücken in der Wand, optional mit einer niedrigen Schwelle, damit sie sich von offenen Durchgängen unterscheiden.</li>
+        <li><strong>Auswählen</strong>: Räume verschieben, Ecken ziehen, Türen entlang der Wand schieben, Beschriftungen frei positionieren. Mit <kbd>Alt</kbd>+Klick auf eine Kante fügst du eine Ecke ein.</li>
+        <li>Ansicht: Mausrad zoomt, mittlere Maustaste oder Leertaste + Ziehen verschiebt.</li>
+      </ul>
+      <h3>Beschriftung</h3>
+      <p>Jeder Raum hat einen Namen und optional eine Kurzbezeichnung, die auf dem Plan steht. Die Brailleschrift wird automatisch erzeugt (Basisschrift, buchstabengetreu; alternativ Vollschrift mit Lautgruppen). Lange Namen passen oft nicht in kleine Räume – dann Kurzbezeichnung vergeben und die <strong>Legende</strong> mitdrucken. Die Maße folgen DIN 32976 / Marburg Medium: Punktabstand 2,5 mm, Zeichenabstand 6 mm, Zeilenabstand 10 mm.</p>
+      <h3>Drucken</h3>
+      <ul>
+        <li><strong>3MF, zweifarbig</strong>: Grundplatte und erhabene Teile (Wände, Punkte, Schrift) sind getrennte Teile eines Objekts. In Bambu Studio jedem Teil ein Filament zuweisen. Erscheinen die Teile als einzelne Objekte: alle markieren, Rechtsklick, „Zusammenfügen“.</li>
+        <li><strong>Ein Körper mit Filamentwechsel</strong>: Alles als ein Objekt exportieren und im Slicer bei der angezeigten Höhe (Oberkante Grundplatte) einen Filamentwechsel einfügen – in Bambu Studio in der Schichtvorschau mit Rechtsklick auf die Schicht.</li>
+        <li><strong>Räume einzeln</strong>: Jeder Raum wird ein eigenes Puzzleteil mit eigenem Boden. So lassen sich Räume in verschiedenen Farben drucken und zusammenlegen.</li>
+        <li>Empfohlen: 0,2 mm Schichthöhe, 0,4 mm Düse, Wände mindestens 1,2 mm dick. Punkte und Schrift mit 100 % Füllung oben.</li>
+      </ul>
+      <h3>Tastaturkürzel</h3>
+      <p><kbd>V</kbd> Auswählen · <kbd>R</kbd> Rechteck · <kbd>P</kbd> Polygon · <kbd>B</kbd>/<kbd>N</kbd> Bereich · <kbd>T</kbd> Tür · <kbd>L</kbd> Beschriftung · <kbd>H</kbd> Hand · <kbd>Entf</kbd> Löschen · <kbd>Strg</kbd>+<kbd>Z</kbd>/<kbd>Y</kbd> Verlauf · <kbd>0</kbd> Alles anzeigen · <kbd>Esc</kbd> Abbrechen</p>
+    </div>
+  </dialog>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
