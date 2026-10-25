@@ -1,6 +1,6 @@
 // Wandverläufe: Polygon + Türen → Wandstreifen (außen/innen) mit Lücken.
 // Wird vom 2D-Editor (Meter) und vom 3D-Generator (Millimeter) gleich genutzt.
-import { sub, add, mul, norm, left, dist, miterPoint, ensureCCW } from './geom.js';
+import { sub, add, mul, norm, left, dist, miterPoint, ensureCCW, labelPoint, pointInPolygon, area } from './geom.js';
 
 /**
  * Richtet das Polygon gegen den Uhrzeigersinn aus und rechnet die Tür-Kanten mit um.
@@ -179,4 +179,25 @@ export function doorSegment(points, door) {
   const half = Math.min(door.width / 2, L / 2);
   const c = Math.max(half, Math.min(L - half, door.t * L));
   return { a: add(A, mul(dir, c - half)), b: add(A, mul(dir, c + half)), center: add(A, mul(dir, c)), dir, L, half };
+}
+
+/**
+ * Raum, in dem ein Raum oder eine Säule liegt: der kleinste größere Raum, der ihren Mittelpunkt enthält (oder null).
+ * Säulen und innere Räume werden aus dem Boden dieses Raums ausgespart.
+ */
+export function parentRoom(el, rooms) {
+  const c = labelPoint(el.points);
+  const own = area(el.points);
+  let best = null, bestArea = Infinity;
+  for (const r of rooms) {
+    if (r === el || r.id === el.id || r.type !== 'room' || !pointInPolygon(c, r.points)) continue;
+    const a = area(r.points);
+    if (a > own + 1e-9 && a < bestArea) { best = r; bestArea = a; }
+  }
+  return best;
+}
+
+/** Säulen und Räume, die direkt in diesem Raum liegen. */
+export function childrenOf(room, rooms) {
+  return rooms.filter(el => (el.type === 'pillar' || el.type === 'room') && el !== room && parentRoom(el, rooms) === room);
 }

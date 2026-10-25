@@ -1,8 +1,8 @@
-// 2D-Editor: Zeichenfläche für Räume, Bereiche, Türen und Beschriftungen (Einheit: Meter).
+// 2D-Editor: Zeichenfläche für Räume, Bereiche, Säulen, Türen und Beschriftungen (Einheit: Meter).
 import * as G from './geom.js';
-import { normalizeRoom, wallRuns, dashedRuns, doorSegment, foreignDoorIntervals } from './walls.js';
+import { normalizeRoom, wallRuns, dashedRuns, doorSegment, foreignDoorIntervals, childrenOf } from './walls.js';
 import { layoutLabel } from './labels.js';
-import { makeRoom, makeLabel, makeMarker, rectPoints, ROOM_COLORS, plateInfo, bedSize, planExtent, uid } from './state.js';
+import { makeRoom, makeLabel, makeMarker, rectPoints, ROOM_COLORS, PILLAR_COLOR, plateInfo, bedSize, planExtent, uid } from './state.js';
 import { markerOutline } from './markers.js';
 
 const HIT = 9;        // Trefferradius in px
@@ -154,9 +154,9 @@ export class Editor {
     if (e.button !== 0) return;
 
     if (tool === 'select') return this.downSelect(e, s, p);
-    if (tool === 'rect' || tool === 'zone') {
+    if (tool === 'rect' || tool === 'zone' || tool === 'pillar') {
       const sp = this.snap(p);
-      this.draw = { type: 'rect', zone: tool === 'zone', start: sp, cur: sp, moved: false };
+      this.draw = { type: 'rect', etype: tool === 'rect' ? 'room' : tool, start: sp, cur: sp, moved: false };
       return;
     }
     if (tool === 'poly' || tool === 'zonepoly') {
@@ -304,7 +304,8 @@ export class Editor {
           else { test[(d.index + 3) % 4].y = np.y; test[(d.index + 1) % 4].x = np.x; }
           test[d.index] = np;
           const bb = G.bbox(test);
-          if (bb.width < 0.2 || bb.height < 0.2) return;
+          const min = room.type === 'pillar' ? 0.1 : 0.2;
+          if (bb.width < min || bb.height < min) return;
           room.points = test;
         } else {
           const test = room.points.map(q => ({ ...q }));
@@ -381,10 +382,10 @@ export class Editor {
       const d = this.draw; this.draw = null;
       const x = Math.min(d.start.x, d.cur.x), y = Math.min(d.start.y, d.cur.y);
       const w = Math.abs(d.cur.x - d.start.x), h = Math.abs(d.cur.y - d.start.y);
-      if (w >= 0.2 && h >= 0.2) {
-        const type = d.zone ? 'zone' : 'room';
-        const color = d.zone ? '#8f8a86' : ROOM_COLORS[st.plan.rooms.filter(r => r.type === 'room').length % ROOM_COLORS.length];
-        const room = makeRoom({ type, kind: 'rect', points: rectPoints(x, y, w, h), name: d.zone ? `Bereich ${st.plan.rooms.filter(r => r.type === 'zone').length + 1}` : `Raum ${st.plan.rooms.filter(r => r.type === 'room').length + 1}`, color });
+      const min = d.etype === 'pillar' ? 0.1 : 0.2;
+      if (w >= min && h >= min) {
+        const type = d.etype;
+        const room = makeRoom({ type, kind: 'rect', points: rectPoints(x, y, w, h), ...this.newElementProps(type) });
         st.update(plan => plan.rooms.push(room));
         st.select({ type: 'room', id: room.id });
         this.cb.onCreated?.(type);
@@ -414,7 +415,7 @@ export class Editor {
   /* ---------- Polygon zeichnen ---------- */
   polyClick(p, s) {
     const zone = this.store.tool === 'zonepoly';
-    if (!this.draw || this.draw.type !== 'poly') this.draw = { type: 'poly', zone, points: [], cur: null };
+    if (!this.draw || this.draw.type !== 'poly') this.draw = { type: 'poly', etype: zone ? 'zone' : 'room', points: [], cur: null };
     const pts = this.draw.points;
     if (pts.length >= 3 && G.dist(this.toScreen(pts[0]), s) <= HIT + 2) { this.finishPolygon(); return; }
     const sp = this.snap(p);
@@ -432,12 +433,20 @@ export class Editor {
     const pts = G.cleanPolygon(d.points);
     if (pts.length < 3 || G.area(pts) < 0.05) { this.render(); return; }
     const st = this.store;
-    const type = d.zone ? 'zone' : 'room';
-    const color = d.zone ? '#8f8a86' : ROOM_COLORS[st.plan.rooms.filter(r => r.type === 'room').length % ROOM_COLORS.length];
-    const room = makeRoom({ type, kind: 'poly', points: pts, name: d.zone ? `Bereich ${st.plan.rooms.filter(r => r.type === 'zone').length + 1}` : `Raum ${st.plan.rooms.filter(r => r.type === 'room').length + 1}`, color });
+    const type = d.etype;
+    const room = makeRoom({ type, kind: 'poly', points: pts, ...this.newElementProps(type) });
     st.update(plan => plan.rooms.push(room));
     st.select({ type: 'room', id: room.id });
     this.cb.onCreated?.(type);
+  }
+
+  /** Name und Farbe für ein neues Element dieses Typs. */
+  newElementProps(type) {
+    const rooms = this.store.plan.rooms;
+    const n = rooms.filter(r => r.type === type).length + 1;
+    if (type === 'zone') return { name: `Bereich ${n}`, color: '#8f8a86' };
+    if (type === 'pillar') return { name: `Säule ${n}`, color: PILLAR_COLOR };
+    return { name: `Raum ${n}`, color: ROOM_COLORS[(n - 1) % ROOM_COLORS.length] };
   }
 
   cancel() {
@@ -632,7 +641,7 @@ export class Editor {
       }
     }
     // Kanten (für Alt+Klick und Treffer außerhalb)
-    for (const pass of ['zone', 'room']) {
+    for (const pass of ['pillar', 'zone', 'room']) {
       for (let i = plan.rooms.length - 1; i >= 0; i--) {
         const r = plan.rooms[i];
         if (r.type !== pass) continue;
@@ -643,11 +652,15 @@ export class Editor {
         }
       }
     }
-    for (const pass of ['zone', 'room']) {
-      for (let i = plan.rooms.length - 1; i >= 0; i--) {
-        const r = plan.rooms[i];
-        if (r.type === pass && G.pointInPolygon(p, r.points)) return { type: 'room', id: r.id };
+    for (const pass of ['pillar', 'zone', 'room']) {
+      // bei verschachtelten Räumen gewinnt der kleinere (innere)
+      let best = null, bestArea = Infinity;
+      for (const r of plan.rooms) {
+        if (r.type !== pass || !G.pointInPolygon(p, r.points)) continue;
+        const a = G.area(r.points);
+        if (a < bestArea - 1e-9 || (Math.abs(a - bestArea) <= 1e-9)) { best = r; bestArea = a; }
       }
+      if (best) return { type: 'room', id: best.id };
     }
     return null;
   }
@@ -669,7 +682,7 @@ export class Editor {
     let cur = 'default';
     if (this.drag?.type === 'pan' && !this.drag.maybe) cur = 'grabbing';
     else if (tool === 'pan' || this.spaceDown) cur = 'grab';
-    else if (tool === 'rect' || tool === 'poly' || tool === 'zone' || tool === 'zonepoly' || tool === 'label' || tool === 'marker' || tool === 'door') cur = 'crosshair';
+    else if (tool === 'rect' || tool === 'poly' || tool === 'zone' || tool === 'zonepoly' || tool === 'pillar' || tool === 'label' || tool === 'marker' || tool === 'door') cur = 'crosshair';
     else if (this.drag) cur = this.drag.type === 'vertex' ? 'crosshair' : 'move';
     else if (this.hover) {
       cur = this.hover.type === 'vertex' ? 'crosshair' : (this.hover.type === 'edge' ? 'pointer' : 'move');
@@ -702,6 +715,7 @@ export class Editor {
 
     for (const r of plan.rooms) if (r.type === 'room') this.drawRoom(ctx, r, s);
     for (const r of plan.rooms) if (r.type === 'zone') this.drawZone(ctx, r, s);
+    for (const r of plan.rooms) if (r.type === 'pillar') this.drawPillar(ctx, r, s);
 
     // Beschriftungen
     for (const r of plan.rooms) if (r.label.visible !== false) this.drawLabel(ctx, r.label.x, r.label.y, r, s, selRoomId === r.id && sel?.type === 'room', r.type === 'room' ? r : null);
@@ -726,8 +740,8 @@ export class Editor {
     this.drawDrawing(ctx, s);
   }
 
-  pathPolygon(ctx, pts) {
-    ctx.beginPath();
+  pathPolygon(ctx, pts, append = false) {
+    if (!append) ctx.beginPath();
     pts.forEach((p, i) => { const q = this.toScreen(p); if (i === 0) ctx.moveTo(q.x, q.y); else ctx.lineTo(q.x, q.y); });
     ctx.closePath();
   }
@@ -783,8 +797,10 @@ export class Editor {
 
   drawRoom(ctx, room, s) {
     const z = this.view.zoom;
+    // Säulen (Grundplatte) und innere Räume (eigene Fläche) aussparen
     this.pathPolygon(ctx, room.points);
-    ctx.fillStyle = room.color; ctx.globalAlpha = .26; ctx.fill(); ctx.globalAlpha = 1;
+    for (const el of childrenOf(room, this.store.plan.rooms)) this.pathPolygon(ctx, el.points, true);
+    ctx.fillStyle = room.color; ctx.globalAlpha = .26; ctx.fill('evenodd'); ctx.globalAlpha = 1;
 
     const t = s.wall.thickness / s.scale;
     const { pts, doors } = normalizeRoom(room.points, [...room.doors, ...foreignDoorIntervals(room, this.store.plan.rooms)], 1);
@@ -850,6 +866,15 @@ export class Editor {
     } else {
       this.fillStrip(ctx, { outer: pts, inner: G.insetPolygon(pts, t), closed: true });
     }
+  }
+
+  /** Säule: Wand außen herum (im Raum), innen Grundplatte oder – gefüllt – erhabener Block. */
+  drawPillar(ctx, pillar, s) {
+    const { pts } = normalizeRoom(pillar.points, [], 1);
+    const t = s.wall.thickness / s.scale;
+    ctx.fillStyle = '#2a2824';
+    this.fillStrip(ctx, { outer: G.insetPolygon(pts, -t), inner: pts, closed: true });
+    if (pillar.filled) { this.pathPolygon(ctx, pts); ctx.fill(); }
   }
 
   drawLabel(ctx, x, y, el, s, selected, room) {

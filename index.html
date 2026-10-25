@@ -27,6 +27,7 @@
     <symbol id="i-poly" viewBox="0 0 24 24"><path d="M6 5h9l4 5-3 9H7l-2-6z"/><circle cx="6" cy="5" r="1.4" fill="currentColor" stroke="none"/><circle cx="15" cy="5" r="1.4" fill="currentColor" stroke="none"/><circle cx="19" cy="10" r="1.4" fill="currentColor" stroke="none"/></symbol>
     <symbol id="i-zone" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="1" stroke-dasharray="3 2.5"/><path d="M8 15l8-6"/></symbol>
     <symbol id="i-zonepoly" viewBox="0 0 24 24"><path d="M6 5h9l4 5-3 9H7l-2-6z" stroke-dasharray="3 2.5"/></symbol>
+    <symbol id="i-pillar" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="1" stroke-dasharray="3 2.5"/><rect x="9" y="9" width="6" height="6"/></symbol>
     <symbol id="i-door" viewBox="0 0 24 24"><path d="M3 19h6M15 19h6M9 19V8a6 6 0 0 1 6 6v5"/></symbol>
     <symbol id="i-label" viewBox="0 0 24 24"><circle cx="8" cy="7" r="1.6" fill="currentColor" stroke="none"/><circle cx="8" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="8" cy="17" r="1.6" fill="currentColor" stroke="none"/><circle cx="14" cy="7" r="1.6" fill="currentColor" stroke="none"/><circle cx="14" cy="12" r="1.6" fill="currentColor" stroke="none" opacity=".3"/><circle cx="14" cy="17" r="1.6" fill="currentColor" stroke="none" opacity=".3"/></symbol>
     <symbol id="i-marker" viewBox="0 0 24 24"><circle cx="12" cy="10" r="3.2" fill="currentColor" stroke="none"/><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/></symbol>
@@ -87,6 +88,7 @@
       <span class="rail-sep"></span>
       <button class="tool" data-tool="zone" title="Bereich ohne Wände als Rechteck (B)"><svg><use href="#i-zone"/></svg><kbd>B</kbd></button>
       <button class="tool" data-tool="zonepoly" title="Bereich ohne Wände als Polygon (N)"><svg><use href="#i-zonepoly"/></svg><kbd>N</kbd></button>
+      <button class="tool" data-tool="pillar" title="Säule im Raum (S): Fläche bleibt Grundplatte"><svg><use href="#i-pillar"/></svg><kbd>S</kbd></button>
       <span class="rail-sep"></span>
       <button class="tool" data-tool="door" title="Tür in eine Wand setzen (T)"><svg><use href="#i-door"/></svg><kbd>T</kbd></button>
       <button class="tool" data-tool="label" title="Freie Beschriftung setzen (L)"><svg><use href="#i-label"/></svg><kbd>L</kbd></button>
@@ -177,6 +179,8 @@
       <ul>
         <li><strong>Raum (Rechteck)</strong>: Mit gedrückter Maustaste aufziehen. <strong>Raum (Polygon)</strong>: Ecken nacheinander anklicken, zum Schließen auf den ersten Punkt klicken oder Enter drücken.</li>
         <li><strong>Bereich</strong>: Wie ein Raum, aber ohne Wände. Er bekommt nur eine flache, gestrichelte Tastlinie und eine Beschriftung – zum Beispiel für Anmeldung und Wartebereich im selben Raum.</li>
+        <li><strong>Säule</strong>: Rechteck in einem Raum aufziehen, etwa für eine Stütze oder einen Schacht. Rundherum entsteht eine Wand, die Fläche selbst bleibt Grundplatte (optional als erhabener Block). Bei „Räume einzeln“ hat der Raum dort ein Loch, und die Säule wird eine kleine Insel der Umgebungsplatte.</li>
+        <li><strong>Raum im Raum</strong>: Ein Zimmer, das ganz oder teilweise vom Flur umgeben ist, einfach in den Flur hineinzeichnen. Es gehört automatisch zum kleinsten Raum, der es umgibt. Bei „Räume einzeln“ wird es aus dessen Boden und Wänden ausgespart und passt als eigenes Teil genau ins Loch.</li>
         <li><strong>Tür</strong>: Auf eine Wand klicken. Türen sind Lücken in der Wand, optional mit einer niedrigen Schwelle, damit sie sich von offenen Durchgängen unterscheiden. Liegt die Wand auf der Grenze zu einem Nachbarraum, wird dessen Wand an derselben Stelle automatisch mit durchbrochen.</li>
         <li><strong>Auswählen</strong>: Räume verschieben, Ecken ziehen, Türen entlang der Wand schieben, Beschriftungen frei positionieren. Mit <kbd>Alt</kbd>+Klick auf eine Kante fügst du eine Ecke ein.</li>
         <li>Ansicht: Mausrad zoomt, mittlere Maustaste oder Leertaste + Ziehen verschiebt.</li>
@@ -194,7 +198,7 @@
         <li>Empfohlen: 0,2 mm Schichthöhe, 0,4 mm Düse, Wände mindestens 1,2 mm dick. Punkte und Schrift mit 100 % Füllung oben.</li>
       </ul>
       <h3>Tastaturkürzel</h3>
-      <p><kbd>V</kbd> Auswählen · <kbd>R</kbd> Rechteck · <kbd>P</kbd> Polygon · <kbd>B</kbd>/<kbd>N</kbd> Bereich · <kbd>T</kbd> Tür · <kbd>L</kbd> Beschriftung · <kbd>M</kbd> Marker · <kbd>H</kbd> Hand · <kbd>Entf</kbd> Löschen · <kbd>Strg</kbd>+<kbd>Z</kbd>/<kbd>Y</kbd> Verlauf · <kbd>0</kbd> Alles anzeigen · <kbd>Esc</kbd> Abbrechen</p>
+      <p><kbd>V</kbd> Auswählen · <kbd>R</kbd> Rechteck · <kbd>P</kbd> Polygon · <kbd>B</kbd>/<kbd>N</kbd> Bereich · <kbd>S</kbd> Säule · <kbd>T</kbd> Tür · <kbd>L</kbd> Beschriftung · <kbd>M</kbd> Marker · <kbd>H</kbd> Hand · <kbd>Entf</kbd> Löschen · <kbd>Strg</kbd>+<kbd>Z</kbd>/<kbd>Y</kbd> Verlauf · <kbd>0</kbd> Alles anzeigen · <kbd>Esc</kbd> Abbrechen</p>
     </div>
   </dialog>
 

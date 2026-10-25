@@ -6,6 +6,7 @@ import { MARKER_KINDS, markerKind, markerLegendEntries } from './markers.js';
 import { stlBinary, threeMF, zipFiles, download, safeName } from './exporters.js';
 import { buildFrame, frameLayout } from './frame.js';
 import * as G from './geom.js';
+import { parentRoom } from './walls.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -18,6 +19,7 @@ const TOOL_HINTS = {
   poly: 'Ecken nacheinander anklicken · Enter oder Klick auf den ersten Punkt schließt',
   zone: 'Bereich aufziehen: Maustaste drücken, ziehen, loslassen',
   zonepoly: 'Ecken des Bereichs anklicken · Enter schließt',
+  pillar: 'Säule aufziehen: im Raum ziehen – die Fläche bleibt Grundplatte',
   door: 'Auf eine Wand klicken, um eine Tür zu setzen',
   label: 'Position der Beschriftung anklicken',
   marker: 'Position des Markers anklicken',
@@ -121,6 +123,7 @@ export class UI {
       case 'p': case 'P': st.setTool('poly'); break;
       case 'b': case 'B': st.setTool('zone'); break;
       case 'n': case 'N': st.setTool('zonepoly'); break;
+      case 's': case 'S': st.setTool('pillar'); break;
       case 't': case 'T': st.setTool('door'); break;
       case 'l': case 'L': st.setTool('label'); break;
       case 'm': case 'M': st.setTool('marker'); break;
@@ -399,16 +402,16 @@ export class UI {
 
   elementListHTML() {
     const plan = this.store.plan;
-    const rooms = plan.rooms.filter(r => r.type === 'room'), zones = plan.rooms.filter(r => r.type === 'zone');
+    const rooms = plan.rooms.filter(r => r.type === 'room'), zones = plan.rooms.filter(r => r.type === 'zone'), pillars = plan.rooms.filter(r => r.type === 'pillar');
     const s = plan.settings;
     const item = (r) => {
       const b = G.bbox(r.points);
-      return `<button class="list-item" data-action="select" data-id="${r.id}"><span class="dot ${r.type === 'zone' ? 'zone' : ''}" style="background:${esc(r.color)}"></span><span class="name">${esc(r.name || '–')}</span><span class="sub">${fmt(b.width, 1)} × ${fmt(b.height, 1)} m</span></button>`;
+      return `<button class="list-item" data-action="select" data-id="${r.id}"><span class="dot ${r.type === 'room' ? '' : r.type}" style="background:${esc(r.color)}"></span><span class="name">${esc(r.name || '–')}</span><span class="sub">${fmt(b.width, 1)} × ${fmt(b.height, 1)} m</span></button>`;
     };
     const labelItem = (l) => `<button class="list-item" data-action="selectLabel" data-id="${l.id}"><span class="dot" style="background:transparent;box-shadow:none">${ICON('i-label')}</span><span class="name">${esc(l.name || '–')}</span><span class="sub">Text</span></button>`;
     const markerItem = (m) => `<button class="list-item" data-action="selectMarker" data-id="${m.id}"><span class="dot" style="background:transparent;box-shadow:none">${ICON('i-marker')}</span><span class="name">${esc(m.name || '–')}</span><span class="sub">${esc(markerKind(m.kind).shape)}</span></button>`;
     const warnings = this.collectWarnings();
-    const total = rooms.length + zones.length + plan.labels.length + plan.markers.length;
+    const total = rooms.length + zones.length + pillars.length + plan.labels.length + plan.markers.length;
     const legendCount = legendEntries(plan).length + markerLegendEntries(plan).length;
     return `
       ${this.warningsHTML(warnings)}
@@ -419,6 +422,10 @@ export class UI {
       <div class="section">
         <div class="section-title"><span>Bereiche</span><span class="hint">${zones.length}</span></div>
         <div class="list">${zones.length ? zones.map(item).join('') : '<div class="empty-list">Bereiche sind Zonen ohne Wände innerhalb eines Raums, z. B. Anmeldung und Wartebereich.</div>'}</div>
+      </div>
+      <div class="section">
+        <div class="section-title"><span>Säulen</span><span class="hint">${pillars.length}</span></div>
+        <div class="list">${pillars.length ? pillars.map(item).join('') : '<div class="empty-list">Säulen und Schächte mitten im Raum. Ihre Fläche bleibt Grundplatte, rundherum entsteht eine Wand. Werkzeug „Säule“ (S).</div>'}</div>
       </div>
       <div class="section">
         <div class="section-title"><span>Freie Beschriftungen</span><span class="hint">${plan.labels.length}</span></div>
@@ -450,7 +457,9 @@ export class UI {
 
   roomPanelHTML(room, sel) {
     const s = this.store.plan.settings;
-    const isRoom = room.type === 'room';
+    const isRoom = room.type === 'room', isPillar = room.type === 'pillar';
+    const typeName = isRoom ? 'Raum' : isPillar ? 'Säule' : 'Bereich';
+    const owner = isPillar || isRoom ? parentRoom(room, this.store.plan.rooms) : null;
     const b = G.bbox(room.points);
     const areaM2 = G.area(room.points);
     const kindName = room.kind === 'rect' ? 'Rechteck' : `Polygon · ${room.points.length} Ecken`;
@@ -474,7 +483,7 @@ export class UI {
       </div>` : '';
     return `
       <div class="section">
-        <div class="section-title"><span>${isRoom ? 'Raum' : 'Bereich'}</span><span class="hint">${kindName}</span></div>
+        <div class="section-title"><span>${typeName}</span><span class="hint">${kindName}</span></div>
         <div class="field"><label for="f-name">Name</label><input class="input" id="f-name" type="text" value="${esc(room.name)}" data-path="name" data-type="text" data-target="sel" autocomplete="off"></div>
         <div class="field"><label for="f-short">Kurzbezeichnung auf dem Plan</label><input class="input" id="f-short" type="text" value="${esc(room.short)}" data-path="short" data-type="text" data-target="sel" placeholder="leer = Name" autocomplete="off"><div class="help">Für kleine Räume. Der volle Name kommt dann in die Legende.</div></div>
         ${this.labelBlockHTML(room, s, isRoom ? room : null)}
@@ -485,7 +494,14 @@ export class UI {
         </div>
         <div class="actions"><button class="btn small" data-action="centerLabel">Beschriftung zentrieren</button></div>
       </div>
+      ${isRoom && owner ? `<div class="notice info">${ICON('i-info')}<div>Liegt in „${esc(owner.name)}“. Bei „Räume einzeln“ wird der Raum aus dessen Boden ausgespart und passt als eigenes Teil genau ins Loch.</div></div>` : ''}
       ${vertexBlock}
+      ${isPillar ? `
+      <div class="section">
+        <div class="section-title"><span>Darstellung</span><span class="hint">${owner ? `in „${esc(owner.name)}“` : 'in keinem Raum'}</span></div>
+        <div class="checks"><label class="check"><input type="checkbox" data-path="filled" data-type="checkbox" data-target="sel" ${room.filled ? 'checked' : ''}> Als erhabenen Block füllen (sonst nur umrandet)</label></div>
+        <div class="help">Rundherum entsteht eine Wand. Bei „Räume einzeln“ hat der Raum an dieser Stelle ein Loch, die Fläche der Säule wird ein Teil der Umgebungsplatte.</div>
+      </div>` : ''}
       ${isRoom ? `
       <div class="section">
         <div class="section-title"><span>Farbe</span><span class="hint">Vorschau und Einzelteile</span></div>
@@ -514,7 +530,7 @@ export class UI {
           <button class="btn small" data-action="flipH">Horizontal spiegeln</button>
           <button class="btn small" data-action="flipV">Vertikal spiegeln</button>
         </div>
-        <div class="help" style="margin-top:6px">Gedreht wird um die Mitte des ${isRoom ? 'Raums' : 'Bereichs'}, Türen und Beschriftung wandern mit. Andere Winkel als 90° machen aus einem Rechteck ein Polygon.</div>
+        <div class="help" style="margin-top:6px">Gedreht wird um die Mitte ${isRoom ? 'des Raums' : isPillar ? 'der Säule' : 'des Bereichs'}, Türen und Beschriftung wandern mit. Andere Winkel als 90° machen aus einem Rechteck ein Polygon.</div>
       </div>
       <div class="section">
         <div class="section-title"><span>Maße</span></div>
@@ -525,7 +541,7 @@ export class UI {
         </dl>
         ${room.kind === 'rect' ? `<div class="actions"><button class="btn small" data-action="toPoly">In Polygon umwandeln</button></div><div class="help" style="margin-top:6px">Mit Alt+Klick auf eine Kante lässt sich auch direkt eine Ecke einfügen.</div>` : ''}
       </div>
-      <div class="actions"><button class="btn danger" data-action="delete">${ICON('i-trash')}<span>${isRoom ? 'Raum' : 'Bereich'} löschen</span></button></div>`;
+      <div class="actions"><button class="btn danger" data-action="delete">${ICON('i-trash')}<span>${typeName} löschen</span></button></div>`;
   }
 
   doorPanelHTML(room, doorId) {

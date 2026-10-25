@@ -43,17 +43,22 @@ export function uid(prefix = 'e') {
   return `${prefix}${Date.now().toString(36)}${idCounter.toString(36)}`;
 }
 
+export const PILLAR_COLOR = '#6f6a62';
+
+/** type: 'room' (mit Wänden), 'zone' (Bereich ohne Wände) oder 'pillar' (Säule: Aussparung im Raum, darin Grundplatte). */
 export function makeRoom({ type = 'room', kind = 'rect', points, name, short = '', color }) {
   const lp = labelPoint(points);
-  return {
-    id: uid(type === 'room' ? 'r' : 'z'),
+  const room = {
+    id: uid(type === 'room' ? 'r' : type === 'pillar' ? 's' : 'z'),
     type, kind, points,
-    name: name ?? (type === 'room' ? 'Raum' : 'Bereich'),
+    name: name ?? (type === 'room' ? 'Raum' : type === 'pillar' ? 'Säule' : 'Bereich'),
     short,
-    color: color ?? ROOM_COLORS[0],
+    color: color ?? (type === 'pillar' ? PILLAR_COLOR : ROOM_COLORS[0]),
     doors: [],
-    label: { x: lp.x, y: lp.y, showBraille: true, showText: true, visible: true },
+    label: { x: lp.x, y: lp.y, showBraille: true, showText: true, visible: type !== 'pillar' },
   };
+  if (type === 'pillar') room.filled = false; // true: Säule als erhabener Block statt nur umrandet
+  return room;
 }
 
 export function rectPoints(x, y, w, h) {
@@ -126,9 +131,10 @@ export function normalizePlan(raw) {
   for (const r of Array.isArray(raw.rooms) ? raw.rooms : []) {
     const points = pts(r.points);
     if (points.length < 3) continue;
-    const room = makeRoom({ type: r.type === 'zone' ? 'zone' : 'room', kind: r.kind === 'poly' ? 'poly' : 'rect', points, name: String(r.name ?? ''), short: String(r.short ?? ''), color: typeof r.color === 'string' ? r.color : undefined });
+    const room = makeRoom({ type: r.type === 'zone' || r.type === 'pillar' ? r.type : 'room', kind: r.kind === 'poly' ? 'poly' : 'rect', points, name: String(r.name ?? ''), short: String(r.short ?? ''), color: typeof r.color === 'string' ? r.color : undefined });
     if (room.kind === 'rect' && points.length !== 4) room.kind = 'poly';
     room.id = typeof r.id === 'string' ? r.id : room.id;
+    if (room.type === 'pillar') room.filled = r.filled === true;
     room.doors = (Array.isArray(r.doors) ? r.doors : []).filter(dr => dr && isFinite(dr.edge) && isFinite(dr.t)).map(dr => ({
       id: typeof dr.id === 'string' ? dr.id : uid('d'), edge: Math.max(0, Math.min(points.length - 1, Math.round(dr.edge))),
       t: Math.max(0, Math.min(1, +dr.t)), width: num(dr.width, 0.9), threshold: dr.threshold !== false,

@@ -1,8 +1,8 @@
 // 3D-Generator: Plan (Meter) → Dreiecksnetze (Millimeter, Z nach oben).
 import * as G from './geom.js';
-import { normalizeRoom, wallRuns, dashedRuns, foreignDoorIntervals } from './walls.js';
+import { normalizeRoom, wallRuns, dashedRuns, foreignDoorIntervals, parentRoom, childrenOf } from './walls.js';
 import { layoutLabel, displayText } from './labels.js';
-import { plateInfo } from './state.js';
+import { plateInfo, PILLAR_COLOR } from './state.js';
 import { markerOutline, markerLegendEntries, markerKind } from './markers.js';
 import polygonClipping from './vendor/polygon-clipping.js';
 import earcut from './vendor/earcut.js';
@@ -189,12 +189,50 @@ export function buildModel(plan, opts = {}) {
     if (Math.min(b.width, b.height) < minWall) warnings.push(`„${room.name}“ ist im Modell nur ${Math.min(b.width, b.height).toFixed(1)} mm breit – zu klein für Wände dieser Dicke.`);
   }
 
-  const addRoomFeatures = (pb, room, color) => {
-    if (room.type === 'room') {
+  const pillarList = plan.rooms.filter(r => r.type === 'pillar');
+  const pillarMM = (pl) => G.cleanPolygon(G.ensureCCW(pl.points.map(toMM)).pts);
+
+  /** Wandring außen um die Säule (liegt im Raum); clip: auf diese Fläche (mm) beschneiden, z. B. den eigenen Raum. */
+  const addPillarRing = (pb, pillar, color, partId, clip) => {
+    const pts = pillarMM(pillar);
+    if (pts.length < 3) return;
+    const ring = G.insetPolygon(pts, -s.wall.thickness);
+    const out = pb.part('raised', partId, color);
+    if (!clip) { extrudeStrip(out, ring, pts, true, zRaised0, baseTop + s.wall.height); return; }
+    try {
+      const polys = polygonClipping.intersection([closeRing(ring), closeRing(pts.slice().reverse())], [closeRing(clip)]);
+      for (const poly of polys) {
+        const rings = polyRings(poly, 0.01);
+        if (rings) extrudeRings(out, rings, zRaised0, baseTop + s.wall.height);
+      }
+    } catch (e) { warnings.push(`Wand um „${pillar.name}“ konnte nicht berechnet werden (${e.message}).`); }
+  };
+  const addPillarFill = (pb, pillar, partId) => {
+    if (!pillar.filled) return;
+    extrudePolygon(pb.part('raised', partId, PILLAR_COLOR), pillarMM(pillar), zRaised0, baseTop + s.wall.height);
+  };
+
+  /** Wandstreifen extrudieren; holes (mm): Flächen innerer Räume, aus denen die Wand herausgeschnitten wird. */
+  const addStrip = (out, outer, inner, closed, z1, holes) => {
+    if (!holes?.length) { extrudeStrip(out, outer, inner, closed, zRaised0, z1); return; }
+    const poly = closed ? [closeRing(outer), closeRing(inner.slice().reverse())] : [closeRing([...outer, ...inner.slice().reverse()])];
+    try {
+      for (const res of polygonClipping.difference(poly, ...holes)) {
+        const rings = polyRings(res, 0.01);
+        if (rings) extrudeRings(out, rings, zRaised0, z1);
+      }
+    } catch { extrudeStrip(out, outer, inner, closed, zRaised0, z1); }
+  };
+
+  const addRoomFeatures = (pb, room, color, holes = null) => {
+    if (room.type === 'pillar') {
+      addPillarRing(pb, room, color, room.id, null);
+      addPillarFill(pb, room, room.id);
+    } else if (room.type === 'room') {
       const { pts, doors } = normalizeRoom(room.points.map(toMM), [...room.doors, ...foreignDoorIntervals(room, plan.rooms)], s.scale);
       const { runs, gaps } = wallRuns(pts, doors, s.wall.thickness);
       const out = pb.part('raised', room.id, color);
-      for (const run of runs) extrudeStrip(out, run.outer, run.inner, run.closed, zRaised0, baseTop + s.wall.height);
+      for (const run of runs) addStrip(out, run.outer, run.inner, run.closed, baseTop + s.wall.height, holes);
       for (const g of gaps) {
         if (!g.threshold || s.door.thresholdHeight <= 0.05) continue;
         // Schwelle etwas in die Wandenden hinein verlängern, damit die Körper sauber verschmelzen
@@ -202,7 +240,7 @@ export function buildModel(plan, opts = {}) {
         const ext = Math.min(0.4, s.wall.thickness / 2);
         const a = G.sub(g.a, G.mul(dir, ext)), b = G.add(g.b, G.mul(dir, ext));
         const ia = G.sub(g.ia, G.mul(dir, ext)), ib = G.add(g.ib, G.mul(dir, ext));
-        extrudeStrip(out, [a, b], [ia, ib], false, zRaised0, baseTop + s.door.thresholdHeight);
+        addStrip(out, [a, b], [ia, ib], false, baseTop + s.door.thresholdHeight, holes);
       }
     } else {
       const { pts } = normalizeRoom(room.points.map(toMM), [], 1);
@@ -250,7 +288,7 @@ export function buildModel(plan, opts = {}) {
         const plate = G.roundedRect(0, 0, info.width, info.height, s.plate.cornerRadius);
         extrudePolygon(pb.part('base', null, s.colors.base), plate, 0, baseTop);
       }
-      for (const r of plan.rooms) addRoomFeatures(pb, r, r.type === 'room' ? r.color : '#6f6a62');
+      for (const r of plan.rooms) addRoomFeatures(pb, r, r.type === 'room' ? r.color : PILLAR_COLOR);
       for (const l of plan.labels) addLabel(pb, l.x, l.y, l, '#6f6a62', null);
       for (const mk of plan.markers) addMarker(pb, mk, '#6f6a62', null);
       pieces.push(pb.finish());
@@ -258,19 +296,40 @@ export function buildModel(plan, opts = {}) {
       const roomList = plan.rooms.filter(r => r.type === 'room' && (!opts.roomIds || opts.roomIds.includes(r.id)));
       const zoneList = plan.rooms.filter(r => r.type === 'zone');
       const assigned = new Set();
+      const ownerOf = new Map(pillarList.map(pl => [pl.id, parentRoom(pl, plan.rooms)]));
       for (const room of roomList) {
         const pb = new PieceBuilder(room.id, room.name || 'Raum', room.color);
-        const pts = room.points.map(toMM);
-        extrudePolygon(pb.part('base', room.id, room.color), pts, 0, baseTop);
-        addRoomFeatures(pb, room, room.color);
+        const pts = G.cleanPolygon(G.ensureCCW(room.points.map(toMM)).pts);
+        // Säulen und innere Räume sind Löcher im Boden des Raums. Säulenflächen gehören zur Umgebungsplatte,
+        // innere Räume sind eigene Teile, die genau ins Loch passen.
+        const own = childrenOf(room, plan.rooms);
+        const inHole = (p) => own.some(el => G.pointInPolygon(p, el.points));
+        const childHoles = own.filter(el => el.type === 'room').map(el => [closeRing(pillarMM(el))]);
+        let based = false;
+        if (own.length) {
+          try {
+            const polys = polygonClipping.difference([closeRing(pts)], ...own.map(pl => [closeRing(pillarMM(pl))]));
+            for (const poly of polys) {
+              const rings = polyRings(poly, 0.01);
+              if (rings) extrudeRings(pb.part('base', room.id, room.color), rings, 0, baseTop);
+            }
+            based = true;
+          } catch (e) {
+            warnings.push(`Säulen und innere Räume in „${room.name}“ konnten nicht ausgespart werden (${e.message}).`);
+          }
+        }
+        if (!based) extrudePolygon(pb.part('base', room.id, room.color), pts, 0, baseTop);
+        addRoomFeatures(pb, room, room.color, childHoles);
+        for (const pl of own) if (pl.type === 'pillar') addPillarRing(pb, pl, room.color, room.id, pts);
         for (const z of zoneList) {
-          if (!assigned.has(z.id) && G.pointInPolygon(G.labelPoint(z.points), room.points)) { assigned.add(z.id); addRoomFeatures(pb, z, room.color); }
+          const zp = G.labelPoint(z.points);
+          if (!assigned.has(z.id) && G.pointInPolygon(zp, room.points) && !inHole(zp)) { assigned.add(z.id); addRoomFeatures(pb, z, room.color); }
         }
         for (const l of plan.labels) {
-          if (!assigned.has(l.id) && G.pointInPolygon({ x: l.x, y: l.y }, room.points)) { assigned.add(l.id); addLabel(pb, l.x, l.y, l, room.color, room.id); }
+          if (!assigned.has(l.id) && G.pointInPolygon({ x: l.x, y: l.y }, room.points) && !inHole(l)) { assigned.add(l.id); addLabel(pb, l.x, l.y, l, room.color, room.id); }
         }
         for (const mk of plan.markers) {
-          if (!assigned.has(mk.id) && G.pointInPolygon(mk, room.points)) { assigned.add(mk.id); addMarker(pb, mk, room.color, room.id); }
+          if (!assigned.has(mk.id) && G.pointInPolygon(mk, room.points) && !inHole(mk)) { assigned.add(mk.id); addMarker(pb, mk, room.color, room.id); }
         }
         pieces.push(pb.finish());
       }
@@ -284,14 +343,17 @@ export function buildModel(plan, opts = {}) {
         }
         if (opts.surround !== false && info.ext) {
           const cutters = plan.rooms
-            .filter(r => r.type === 'room' || !assigned.has(r.id))
+            .filter(r => r.type === 'room' || (r.type === 'zone' && !assigned.has(r.id)))
             .map(r => G.cleanPolygon(G.ensureCCW(r.points.map(toMM)).pts))
             .filter(p => p.length >= 3 && G.area(p) > 1)
             .map(p => [closeRing(p)]);
           const plate = [closeRing(G.roundedRect(0, 0, info.width, info.height, s.plate.cornerRadius))];
           let diff = [];
           try {
-            const uni = cutters.length ? polygonClipping.union(...cutters) : [];
+            let uni = cutters.length ? polygonClipping.union(...cutters) : [];
+            // Säulen bleiben Grundplatte: aus den Räumen wieder herausnehmen → Inseln in der Umgebung
+            const cut = pillarList.map(pillarMM).filter(p => p.length >= 3).map(p => [closeRing(p)]);
+            if (uni.length && cut.length) uni = polygonClipping.difference(uni, ...cut);
             diff = uni.length ? polygonClipping.difference(plate, uni) : [plate];
           } catch (e) {
             warnings.push(`Umgebungsplatte konnte nicht berechnet werden (${e.message}).`);
@@ -306,6 +368,16 @@ export function buildModel(plan, opts = {}) {
             const pb = new PieceBuilder(`surround-${k}`, total > 1 ? `Umgebung ${k + 1}` : 'Umgebung', s.colors.base);
             k++;
             extrudeRings(pb.part('base', null, s.colors.base), [outer, ...holes], 0, baseTop);
+            for (const pl of pillarList) {
+              if (assigned.has(pl.id)) continue;
+              const pm = toMM(G.labelPoint(pl.points));
+              if (!G.pointInPolygon(pm, outer) || holes.some(h => G.pointInPolygon(pm, h))) continue;
+              assigned.add(pl.id);
+              // freistehende Säule (in keinem Raum): Wandring liegt ebenfalls auf der Umgebung
+              if (!ownerOf.get(pl.id)) addPillarRing(pb, pl, PILLAR_COLOR, null, null);
+              addPillarFill(pb, pl, null);
+              if (pl.label.visible !== false) addLabel(pb, pl.label.x, pl.label.y, pl, PILLAR_COLOR, null);
+            }
             for (const l of plan.labels) {
               if (assigned.has(l.id)) continue;
               const pm = toMM({ x: l.x, y: l.y });
@@ -338,6 +410,13 @@ function closeRing(pts) {
   const r = pts.map(p => [p.x, p.y]);
   r.push([pts[0].x, pts[0].y]);
   return r;
+}
+
+/** polygon-clipping-Polygon → [außen CCW, Löcher CW] in mm, oder null, wenn kleiner als minArea. */
+function polyRings(poly, minArea = 15) {
+  const rings = poly.map(r => G.cleanPolygon(r.slice(0, -1).map(([x, y]) => ({ x, y })), 1e-6)).filter(r => r.length >= 3);
+  if (!rings.length || G.area(rings[0]) < minArea) return null;
+  return [G.ensureCCW(rings[0]).pts, ...rings.slice(1).map(h => G.ensureCCW(h).pts.reverse())];
 }
 
 function ringArea(ring) {
