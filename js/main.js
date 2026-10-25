@@ -51,7 +51,7 @@ const previewCtl = {
   rebuild() {
     if (!preview) return;
     const plan = store.plan;
-    const model = buildModel(plan, { scope: previewOpts.scope, overlap: 0, legend: previewOpts.legend });
+    const model = buildModel(plan, { scope: previewOpts.scope, overlap: 0, legend: previewOpts.legend, surround: true });
     let pieces = model.pieces;
     let frameInfo = '';
     if (previewOpts.frame && model.pieces.length) {

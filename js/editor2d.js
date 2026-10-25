@@ -515,6 +515,38 @@ export class Editor {
     return false;
   }
 
+  /** Raum um seine Mitte drehen (deg, gegen den Uhrzeigersinn auf dem Bildschirm) oder spiegeln. */
+  transformRoom(roomId, kind, value = 0) {
+    const st = this.store;
+    const room = st.room(roomId);
+    if (!room) return;
+    const b = G.bbox(room.points);
+    const c = { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 };
+    let fn;
+    if (kind === 'rotate') {
+      const a = -value * Math.PI / 180; // Bildschirm: y nach unten
+      const cos = Math.cos(a), sin = Math.sin(a);
+      fn = (p) => ({ x: c.x + (p.x - c.x) * cos - (p.y - c.y) * sin, y: c.y + (p.x - c.x) * sin + (p.y - c.y) * cos });
+    } else if (kind === 'flipH') fn = (p) => ({ x: 2 * c.x - p.x, y: p.y });
+    else fn = (p) => ({ x: p.x, y: 2 * c.y - p.y });
+    st.update(() => {
+      room.points = room.points.map(fn);
+      const lp = fn(room.label);
+      room.label.x = lp.x; room.label.y = lp.y;
+      const rightAngle = kind !== 'rotate' || Math.abs(((value % 90) + 90) % 90) < 1e-9;
+      if (room.kind === 'rect' && !rightAngle) room.kind = 'poly';
+      if (this.snapStep > 0) {
+        const nb = G.bbox(room.points);
+        const sx = Math.round(nb.minX / this.snapStep) * this.snapStep - nb.minX;
+        const sy = Math.round(nb.minY / this.snapStep) * this.snapStep - nb.minY;
+        room.points = room.points.map(p => ({ x: p.x + sx, y: p.y + sy }));
+        room.label.x += sx; room.label.y += sy;
+      }
+      room.points = room.points.map(p => ({ x: Math.round(p.x * 1e6) / 1e6, y: Math.round(p.y * 1e6) / 1e6 }));
+      room.label.x = Math.round(room.label.x * 1e6) / 1e6; room.label.y = Math.round(room.label.y * 1e6) / 1e6;
+    });
+  }
+
   keepLabelInside(room) {
     if (!G.pointInPolygon(room.label, room.points)) {
       const lp = G.labelPoint(room.points);

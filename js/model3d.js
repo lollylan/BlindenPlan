@@ -3,6 +3,8 @@ import * as G from './geom.js';
 import { normalizeRoom, wallRuns, dashedRuns } from './walls.js';
 import { layoutLabel, displayText } from './labels.js';
 import { plateInfo } from './state.js';
+import polygonClipping from './vendor/polygon-clipping.js';
+import earcut from './vendor/earcut.js';
 
 let textProvider = null;
 
@@ -54,6 +56,33 @@ export function extrudeStrip(out, outer, inner, closed, z0, z1) {
     tri(out, [i0.x, i0.y, z0], [o0.x, o0.y, z1], [i0.x, i0.y, z1]);
     tri(out, [oN.x, oN.y, z0], [iN.x, iN.y, z0], [iN.x, iN.y, z1]);
     tri(out, [oN.x, oN.y, z0], [iN.x, iN.y, z1], [oN.x, oN.y, z1]);
+  }
+}
+
+/** Polygon mit Löchern extrudieren. rings[0] außen (CCW), weitere Ringe Löcher (CW). */
+export function extrudeRings(out, rings, z0, z1) {
+  const data = [];
+  const holeIdx = [];
+  rings.forEach((ring, i) => {
+    if (i > 0) holeIdx.push(data.length / 2);
+    for (const p of ring) data.push(p.x, p.y);
+  });
+  const pt = (i) => ({ x: data[i * 2], y: data[i * 2 + 1] });
+  const idx = earcut(data, holeIdx.length ? holeIdx : null, 2);
+  for (let k = 0; k < idx.length; k += 3) {
+    const a = pt(idx[k]), b = pt(idx[k + 1]), c = pt(idx[k + 2]);
+    const ar = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+    if (Math.abs(ar) < 1e-9) continue;
+    const [A, B, C] = ar > 0 ? [a, b, c] : [a, c, b];
+    tri(out, [A.x, A.y, z1], [B.x, B.y, z1], [C.x, C.y, z1]);
+    tri(out, [A.x, A.y, z0], [C.x, C.y, z0], [B.x, B.y, z0]);
+  }
+  for (const ring of rings) {
+    for (let i = 0; i < ring.length; i++) {
+      const A = ring[i], B = ring[(i + 1) % ring.length];
+      tri(out, [A.x, A.y, z0], [B.x, B.y, z0], [B.x, B.y, z1]);
+      tri(out, [A.x, A.y, z0], [B.x, B.y, z1], [A.x, A.y, z1]);
+    }
   }
 }
 
@@ -137,7 +166,8 @@ class PieceBuilder {
 /**
  * Baut das Modell.
  * @param plan
- * @param {{scope?: 'whole'|'rooms', roomIds?: string[], overlap?: number, legend?: boolean, legendOnly?: boolean}} opts
+ * @param {{scope?: 'whole'|'rooms', roomIds?: string[], overlap?: number, legend?: boolean, legendOnly?: boolean, surround?: boolean}} opts
+ *   surround: bei 'rooms' die restliche Grundplatte (Rand und Zwischenräume) als eigenes Teil „Umgebung“ erzeugen.
  */
 export function buildModel(plan, opts = {}) {
   const s = plan.settings;
@@ -241,6 +271,38 @@ export function buildModel(plan, opts = {}) {
           addRoomFeatures(pb, z, '#8f8a86');
           pieces.push(pb.finish());
         }
+        if (opts.surround !== false && info.ext) {
+          const cutters = plan.rooms
+            .filter(r => r.type === 'room' || !assigned.has(r.id))
+            .map(r => G.cleanPolygon(G.ensureCCW(r.points.map(toMM)).pts))
+            .filter(p => p.length >= 3 && G.area(p) > 1)
+            .map(p => [closeRing(p)]);
+          const plate = [closeRing(G.roundedRect(0, 0, info.width, info.height, s.plate.cornerRadius))];
+          let diff = [];
+          try {
+            const uni = cutters.length ? polygonClipping.union(...cutters) : [];
+            diff = uni.length ? polygonClipping.difference(plate, uni) : [plate];
+          } catch (e) {
+            warnings.push(`Umgebungsplatte konnte nicht berechnet werden (${e.message}).`);
+          }
+          let k = 0;
+          const total = diff.filter(poly => ringArea(poly[0]) >= 15).length;
+          for (const poly of diff) {
+            const rings = poly.map(r => G.cleanPolygon(r.slice(0, -1).map(([x, y]) => ({ x, y })), 1e-6)).filter(r => r.length >= 3);
+            if (!rings.length || G.area(rings[0]) < 15) continue;
+            const outer = G.ensureCCW(rings[0]).pts;
+            const holes = rings.slice(1).filter(h => G.area(h) >= 4).map(h => G.ensureCCW(h).pts.reverse());
+            const pb = new PieceBuilder(`surround-${k}`, total > 1 ? `Umgebung ${k + 1}` : 'Umgebung', s.colors.base);
+            k++;
+            extrudeRings(pb.part('base', null, s.colors.base), [outer, ...holes], 0, baseTop);
+            for (const l of plan.labels) {
+              if (assigned.has(l.id)) continue;
+              const pm = toMM({ x: l.x, y: l.y });
+              if (G.pointInPolygon(pm, outer) && !holes.some(h => G.pointInPolygon(pm, h))) { assigned.add(l.id); addLabel(pb, l.x, l.y, l, '#6f6a62', null); }
+            }
+            pieces.push(pb.finish());
+          }
+        }
         for (const l of plan.labels) if (!assigned.has(l.id)) warnings.push(`Beschriftung „${displayText(l)}“ liegt außerhalb aller Räume und fehlt bei „Räume einzeln“.`);
       }
     }
@@ -253,6 +315,18 @@ export function buildModel(plan, opts = {}) {
 
   const triangles = pieces.reduce((n, p) => n + p.triangles, 0);
   return { pieces, warnings, info: { plateWidth: info.width, plateHeight: info.height, baseTop, triangles } };
+}
+
+function closeRing(pts) {
+  const r = pts.map(p => [p.x, p.y]);
+  r.push([pts[0].x, pts[0].y]);
+  return r;
+}
+
+function ringArea(ring) {
+  let s = 0;
+  for (let i = 0; i + 1 < ring.length; i++) s += ring[i][0] * ring[i + 1][1] - ring[i + 1][0] * ring[i][1];
+  return Math.abs(s / 2);
 }
 
 export function legendEntries(plan) {

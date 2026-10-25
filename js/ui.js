@@ -30,7 +30,7 @@ export class UI {
     this.editor = editor;
     this.preview = previewCtl;
     this.tab = 'selection';
-    this.exportOpts = { format: '3mf', scope: 'whole', split: true, legend: true };
+    this.exportOpts = { format: '3mf', scope: 'whole', split: true, legend: true, surround: true };
     this.buildWarnings = [];
     this.editSnapshot = null;
     this.panel = $('panel');
@@ -223,6 +223,15 @@ export class UI {
       case 'exportFrame': this.doExportFrame(); break;
       case 'exportOpt': this.exportOpts[btn.dataset.key] = btn.dataset.value === 'true' ? true : btn.dataset.value === 'false' ? false : btn.dataset.value; this.renderExport(); break;
       case 'toggleLegend': this.exportOpts.legend = !this.exportOpts.legend; this.renderExport(); break;
+      case 'toggleSurround': this.exportOpts.surround = !this.exportOpts.surround; this.renderExport(); break;
+      case 'rotate': { const id = sel?.id ?? sel?.roomId; if (id) this.editor.transformRoom(id, 'rotate', parseFloat(btn.dataset.deg)); break; }
+      case 'rotateBy': {
+        const id = sel?.id ?? sel?.roomId;
+        const deg = parseFloat(String(this.panel.querySelector('#rotDeg')?.value ?? '0').replace(',', '.'));
+        if (id && isFinite(deg) && deg !== 0) this.editor.transformRoom(id, 'rotate', deg);
+        break;
+      }
+      case 'flipH': case 'flipV': { const id = sel?.id ?? sel?.roomId; if (id) this.editor.transformRoom(id, btn.dataset.action); break; }
       case 'view3d': this.setView('3d'); break;
       case 'scaleDenom': {
         const input = this.panel.querySelector('#scaleDenom');
@@ -466,6 +475,23 @@ export class UI {
         <div class="actions"><button class="btn small" data-action="addDoor">${ICON('i-door')}<span>Tür setzen (T)</span></button></div>
       </div>` : ''}
       <div class="section">
+        <div class="section-title"><span>Drehen und Spiegeln</span></div>
+        <div class="actions">
+          <button class="btn small" data-action="rotate" data-deg="90">90° links</button>
+          <button class="btn small" data-action="rotate" data-deg="-90">90° rechts</button>
+          <button class="btn small" data-action="rotate" data-deg="180">180°</button>
+        </div>
+        <div class="row" style="align-items:end;margin-top:8px">
+          <div class="field" style="margin-bottom:0"><label for="rotDeg">Winkel</label><div class="input-unit"><input class="input" id="rotDeg" type="number" step="1" min="-359" max="359" value="15"><span>°</span></div></div>
+          <button class="btn" data-action="rotateBy" style="height:32px">Drehen (links)</button>
+        </div>
+        <div class="actions" style="margin-top:8px">
+          <button class="btn small" data-action="flipH">Horizontal spiegeln</button>
+          <button class="btn small" data-action="flipV">Vertikal spiegeln</button>
+        </div>
+        <div class="help" style="margin-top:6px">Gedreht wird um die Mitte des ${isRoom ? 'Raums' : 'Bereichs'}, Türen und Beschriftung wandern mit. Andere Winkel als 90° machen aus einem Rechteck ein Polygon.</div>
+      </div>
+      <div class="section">
         <div class="section-title"><span>Maße</span></div>
         <dl class="kv">
           <dt>Größe</dt><dd>${fmt(b.width)} × ${fmt(b.height)} m</dd>
@@ -678,7 +704,7 @@ export class UI {
     const layers02 = Math.round(layer / 0.2);
     let scopeText = '';
     if (o.scope === 'whole') scopeText = `Eine Platte ${Math.round(info.width)} × ${Math.round(info.height)} mm`;
-    else if (o.scope === 'rooms') scopeText = `${rooms} Raumteil${rooms === 1 ? '' : 'e'} mit eigenem Boden`;
+    else if (o.scope === 'rooms') scopeText = `${rooms} Raumteil${rooms === 1 ? '' : 'e'} mit eigenem Boden${o.surround ? ' + Umgebungsplatte' : ''}`;
     else scopeText = 'Nur der ausgewählte Raum';
     return `
       <div class="big">${esc(scopeText)}</div>
@@ -720,7 +746,10 @@ export class UI {
         </div>
       </div>
       <div class="section">
-        <div class="checks"><label class="check"><input type="checkbox" data-action="toggleLegend" ${o.legend ? 'checked' : ''} ${o.scope === 'selected' ? 'disabled' : ''}> Legende als eigene Tafel beilegen</label></div>
+        <div class="checks">
+          <label class="check"><input type="checkbox" data-action="toggleLegend" ${o.legend ? 'checked' : ''} ${o.scope === 'selected' ? 'disabled' : ''}> Legende als eigene Tafel beilegen</label>
+          ${o.scope === 'rooms' ? `<label class="check"><input type="checkbox" data-action="toggleSurround" ${o.surround ? 'checked' : ''}> Restliche Grundplatte (Rand und Zwischenräume) als Teil „Umgebung“</label>` : ''}
+        </div>
       </div>
       <div class="export-info" id="exportInfo">${this.exportInfoHTML()}</div>
       ${this.buildWarnings.length ? this.warningsHTML(this.buildWarnings.map(t => ({ kind: 'warn', text: t }))) : ''}
@@ -746,7 +775,7 @@ export class UI {
       const selRoom = sel && (sel.type === 'room' || sel.type === 'vertex' || sel.type === 'door') ? st.room(sel.id ?? sel.roomId) : null;
       const scope = o.scope === 'selected' ? 'rooms' : o.scope;
       const roomIds = o.scope === 'selected' && selRoom ? [selRoom.id] : undefined;
-      const model = buildModel(plan, { scope, roomIds, overlap: o.split ? 0 : 0.2, legend: o.legend && o.scope !== 'selected' });
+      const model = buildModel(plan, { scope, roomIds, overlap: o.split ? 0 : 0.2, legend: o.legend && o.scope !== 'selected', surround: o.surround });
       this.buildWarnings = model.warnings;
       if (!model.pieces.length) { this.toast('Nichts zu exportieren – der Plan enthält keine Räume.', 'warn'); return; }
       const base = `blindenplan-${safeName(plan.name)}`;
