@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>BlindenPlan – Tastbare Gebäudepläne</title>
+  <title>Raumgefühl – Tastbare Gebäudepläne</title>
   <meta name="description" content="Zeichne Grundrisse, beschrifte sie in Brailleschrift und exportiere tastbare 3D-Modelle als STL oder 3MF für den 3D-Druck.">
   <meta name="theme-color" content="#efebe4">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230e6b63'/%3E%3Ccircle cx='11' cy='10' r='3' fill='%23fff'/%3E%3Ccircle cx='21' cy='10' r='3' fill='%23fff'/%3E%3Ccircle cx='11' cy='22' r='3' fill='%23fff'/%3E%3Ccircle cx='21' cy='22' r='3' fill='%23fff' fill-opacity='.35'/%3E%3C/svg%3E">
@@ -58,7 +58,7 @@
     <header class="topbar">
       <div class="brand">
         <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
-        <span class="brand-name">BlindenPlan</span>
+        <span class="brand-name">Raumgefühl</span>
       </div>
       <input class="project-name" id="projectName" type="text" value="Neuer Plan" aria-label="Name des Plans" spellcheck="false">
       <div class="topbar-group" role="group" aria-label="Datei">
@@ -164,6 +164,8 @@
       <span id="statusPlate"></span>
       <span class="spacer"></span>
       <span id="statusZoom" class="mono">100 %</span>
+      <span class="status-sep"></span>
+      <button class="status-link" id="btnImprint" type="button">Impressum</button>
     </footer>
   </div>
 
@@ -171,7 +173,7 @@
 
   <dialog class="dialog" id="helpDialog">
     <div class="dialog-head">
-      <h2>So funktioniert BlindenPlan</h2>
+      <h2>So funktioniert Raumgefühl</h2>
       <button class="btn icon" id="helpClose" title="Schließen"><svg><use href="#i-close"/></svg></button>
     </div>
     <div class="dialog-body">
@@ -199,6 +201,47 @@
       </ul>
       <h3>Tastaturkürzel</h3>
       <p><kbd>V</kbd> Auswählen · <kbd>R</kbd> Rechteck · <kbd>P</kbd> Polygon · <kbd>B</kbd>/<kbd>N</kbd> Bereich · <kbd>S</kbd> Säule · <kbd>T</kbd> Tür · <kbd>L</kbd> Beschriftung · <kbd>M</kbd> Marker · <kbd>H</kbd> Hand · <kbd>Entf</kbd> Löschen · <kbd>Strg</kbd>+<kbd>Z</kbd>/<kbd>Y</kbd> Verlauf · <kbd>0</kbd> Alles anzeigen · <kbd>Esc</kbd> Abbrechen</p>
+      <p class="dialog-foot">Raumgefühl ist ein kostenloses Open-Source-Projekt von <a href="https://www.asklaion.de" target="_blank" rel="noopener">Asklaion</a>. <button class="link" type="button" data-open="imprintDialog">Impressum</button></p>
+    </div>
+  </dialog>
+
+  <dialog class="dialog" id="imprintDialog" aria-labelledby="imprintTitle">
+    <div class="dialog-head">
+      <h2 id="imprintTitle">Impressum</h2>
+      <button class="btn icon" data-close title="Schließen"><svg><use href="#i-close"/></svg></button>
+    </div>
+    <div class="dialog-body imprint">
+      <p class="lead">Raumgefühl ist ein kostenloses Open-Source-Projekt von <a href="https://www.asklaion.de" target="_blank" rel="noopener">Asklaion</a> – digitale Helfer, entwickelt in der Hausarztpraxis Dr. Rasche in Würzburg.</p>
+
+      <h3>Angaben gemäß § 5 DDG</h3>
+      <address>
+        Dr. med. Florian Rasche<br>
+        Facharzt für Allgemeinmedizin<br>
+        Huttenstraße 6<br>
+        97072 Würzburg<br>
+        Deutschland
+      </address>
+
+      <h3>Kontakt</h3>
+      <dl class="imprint-list">
+        <dt>Telefon</dt><dd><a href="tel:+4993172525">0931 / 72525</a></dd>
+        <dt>Fax</dt><dd>0931 / 76264</dd>
+        <dt>E-Mail</dt><dd><a href="mailto:praxis@dr-rasche.de">praxis@dr-rasche.de</a></dd>
+        <dt>Praxis</dt><dd><a href="https://www.dr-rasche.de" target="_blank" rel="noopener">www.dr-rasche.de</a></dd>
+        <dt>Asklaion</dt><dd><a href="https://www.asklaion.de" target="_blank" rel="noopener">www.asklaion.de</a></dd>
+      </dl>
+
+      <h3>Berufsrechtliche Angaben</h3>
+      <p>Berufsbezeichnung: Arzt, verliehen in der Bundesrepublik Deutschland. Zuständige Kammer: Bayerische Landesärztekammer, Mühlbaurstraße 16, 81677 München (<a href="https://www.blaek.de" target="_blank" rel="noopener">www.blaek.de</a>). Zuständige Aufsichtsbehörde: Regierung von Unterfranken, Peterplatz 9, 97070 Würzburg. Es gelten die Berufsordnung für die Ärzte Bayerns, das Heilberufe-Kammergesetz und die Bundesärzteordnung, einsehbar auf der Website der Bayerischen Landesärztekammer.</p>
+
+      <h3>Verantwortlich für den Inhalt nach § 18 Abs. 2 MStV</h3>
+      <p>Dr. med. Florian Rasche, Huttenstraße 6, 97072 Würzburg</p>
+
+      <h3>Datenschutz</h3>
+      <p>Raumgefühl läuft vollständig in deinem Browser. Pläne werden nur lokal im Browser gespeichert und nicht an einen Server übertragen. Die Seite wird über GitHub Pages ausgeliefert; beim Laden werden außerdem die Schrift Inter von Google Fonts und die 3D-Bibliothek Three.js von jsDelivr abgerufen. Dabei erhalten diese Anbieter technisch bedingt deine IP-Adresse.</p>
+
+      <h3>Haftung und Lizenz</h3>
+      <p>Raumgefühl wird ohne Gewähr unter der <a href="https://github.com/lollylan/BlindenPlan/blob/main/LICENSE" target="_blank" rel="noopener">MIT-Lizenz</a> bereitgestellt. Exportierte Modelle und die erzeugte Brailleschrift vor dem Aushang bitte prüfen, am besten von einer Braille lesenden Person. Für Inhalte verlinkter Seiten ist der jeweilige Anbieter verantwortlich. Der Quellcode liegt auf <a href="https://github.com/lollylan/BlindenPlan" target="_blank" rel="noopener">GitHub</a>.</p>
     </div>
   </dialog>
 

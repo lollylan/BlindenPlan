@@ -1,6 +1,8 @@
-# BlindenPlan
+# Raumgefühl
 
 Tastbare Gebäudepläne für blinde und sehbehinderte Menschen – gezeichnet im Browser, beschriftet in Brailleschrift, exportiert als STL oder 3MF für den 3D-Druck.
+
+Ein kostenloses Open-Source-Projekt von [Asklaion](https://www.asklaion.de) aus der [Praxis Dr. Rasche](https://www.dr-rasche.de) in Würzburg. (Früherer Arbeitstitel: BlindenPlan.)
 
 **Live:** https://lollylan.github.io/BlindenPlan/
 
@@ -41,6 +43,10 @@ Die Vollschrift wird automatisch mit den Lautgruppen au, äu, eu, ei, ch, sch, s
 Reine Web-App ohne Build-Schritt: `index.html`, `css/app.css`, `js/*.js` (ES-Module). Three.js wird vom CDN geladen (nur für 3D-Vorschau und Profilschrift). Lokal testen z. B. mit `python -m http.server 8765` und http://localhost:8765 öffnen.
 
 Deployment über GitHub Pages direkt vom Branch `main` (Einstellungen → Pages → „Deploy from a branch“, Ordner `/`). Die Datei `.nojekyll` sorgt dafür, dass GitHub die Seite ohne Jekyll-Build eins zu eins ausliefert – ohne sie scheitert der Build an den Unterordnern und ES-Modulen.
+
+## Impressum
+
+Dr. med. Florian Rasche, Huttenstraße 6, 97072 Würzburg · praxis@dr-rasche.de · [www.dr-rasche.de](https://www.dr-rasche.de) · [www.asklaion.de](https://www.asklaion.de). Das vollständige Impressum steht in der App (Statusleiste unten rechts).
 
 ## Lizenz
 

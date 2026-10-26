@@ -1,11 +1,11 @@
 // Export: binäres STL, 3MF (ZIP mit XML-Modell), ZIP-Container, Download.
 
 /* ---------- STL ---------- */
-export function stlBinary(trisList, name = 'BlindenPlan') {
+export function stlBinary(trisList, name = 'Raumgefuehl') {
   const total = trisList.reduce((n, t) => n + t.length / 9, 0);
   const buf = new ArrayBuffer(84 + total * 50);
   const dv = new DataView(buf);
-  const header = new TextEncoder().encode(`BlindenPlan ${name}`.slice(0, 79));
+  const header = new TextEncoder().encode(`Raumgefuehl ${name}`).subarray(0, 80);
   new Uint8Array(buf, 0, 80).set(header);
   dv.setUint32(80, total, true);
   let off = 84;
@@ -155,8 +155,8 @@ export function threeMF(pieces, opts = {}) {
   const materials = `<basematerials id="1">${colors.map((c, i) => `<base name="Farbe ${i + 1}" displaycolor="${c}FF"/>`).join('')}</basematerials>`;
   const model = `<?xml version="1.0" encoding="UTF-8"?>
 <model unit="millimeter" xml:lang="de-DE" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
-<metadata name="Title">${esc(opts.title || 'BlindenPlan')}</metadata>
-<metadata name="Application">BlindenPlan</metadata>
+<metadata name="Title">${esc(opts.title || 'Raumgefühl')}</metadata>
+<metadata name="Application">Raumgefühl</metadata>
 <metadata name="CreationDate">${new Date().toISOString().slice(0, 10)}</metadata>
 <resources>${materials}${objects.join('')}</resources>
 <build>${items.join('')}</build>

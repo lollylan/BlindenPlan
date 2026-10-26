@@ -1,4 +1,4 @@
-/* BlindenPlan – Oberfläche
+/* Raumgefühl – Oberfläche
    Operate-Modus: ruhiges, warmes Papier als Hintergrund, eine Sans für alles,
    Akzent nur für Aktionen und Auswahl. */
 
@@ -293,6 +293,8 @@ select.input { appearance: none; background-image: url("data:image/svg+xml,%3Csv
 .status-field select { height: 22px; border: 1px solid transparent; border-radius: 4px; background: transparent; padding: 0 2px; color: var(--ink); cursor: pointer; }
 .status-field select:hover { background: var(--surface-2); border-color: var(--line); }
 #statusPlate.bad { color: var(--danger); font-weight: 500; }
+.status-link { height: 22px; padding: 0 6px; margin: 0 -6px; border: 0; border-radius: 4px; background: transparent; color: var(--ink-2); font-size: 12px; cursor: pointer; transition: background var(--t) var(--ease), color var(--t) var(--ease); }
+.status-link:hover { background: var(--surface-2); color: var(--ink); }
 
 /* Toasts */
 .toasts { position: fixed; left: 50%; bottom: 44px; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 50; pointer-events: none; }
@@ -318,6 +320,17 @@ select.input { appearance: none; background-image: url("data:image/svg+xml,%3Csv
 .dialog-body ul { padding-left: 18px; margin: 0; }
 .dialog-body li { margin-bottom: 6px; }
 .dialog-body p { margin: 0 0 8px; }
+.dialog-body a, .link { color: var(--accent); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px; }
+.dialog-body a:hover, .link:hover { color: var(--accent-hover); text-decoration-thickness: 2px; }
+.link { background: none; border: 0; padding: 0; cursor: pointer; }
+.dialog-foot { margin-top: 20px !important; padding-top: 14px; border-top: 1px solid var(--line); color: var(--ink-2); }
+.imprint { max-width: 68ch; }
+.imprint .lead { font-size: 14.5px; color: var(--ink); margin-bottom: 4px; }
+.imprint h3 { margin-top: 22px; }
+.imprint address { font-style: normal; }
+.imprint-list { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0; }
+.imprint-list dt { color: var(--ink-3); }
+.imprint-list dd { margin: 0; }
 
 /* Responsive */
 @media (max-width: 980px) {

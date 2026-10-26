@@ -62,7 +62,7 @@ export class UI {
         const plan = normalizePlan(JSON.parse(await file.text()));
         st.setPlan(plan); this.editor.fit();
         this.toast(`„${plan.name}“ geladen.`, 'ok');
-      } catch { this.toast('Die Datei konnte nicht gelesen werden. Erwartet wird eine BlindenPlan-JSON-Datei.', 'danger'); }
+      } catch { this.toast('Die Datei konnte nicht gelesen werden. Erwartet wird eine Raumgefühl-JSON-Datei.', 'danger'); }
     });
     $('btnSave').addEventListener('click', () => this.saveJSON());
     $('btnExample').addEventListener('click', () => this.loadExample());
@@ -72,7 +72,15 @@ export class UI {
     $('btnRedo').addEventListener('click', () => st.redo());
     $('btnHelp').addEventListener('click', () => $('helpDialog').showModal());
     $('helpClose').addEventListener('click', () => $('helpDialog').close());
-    $('helpDialog').addEventListener('click', (e) => { if (e.target === e.currentTarget) e.currentTarget.close(); });
+    $('btnImprint').addEventListener('click', () => $('imprintDialog').showModal());
+    for (const dlg of document.querySelectorAll('dialog.dialog')) {
+      dlg.addEventListener('click', (e) => { if (e.target === e.currentTarget) e.currentTarget.close(); });
+      dlg.querySelector('[data-close]')?.addEventListener('click', () => dlg.close());
+    }
+    document.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => {
+      b.closest('dialog')?.close();
+      $(b.dataset.open).showModal();
+    }));
     $('btnExport').addEventListener('click', () => this.setTab('export'));
     $('viewPlan').addEventListener('click', () => this.setView('plan'));
     $('view3d').addEventListener('click', () => this.setView('3d'));
@@ -102,7 +110,8 @@ export class UI {
 
   onKey(e) {
     const st = this.store;
-    if ($('helpDialog').open) { if (e.key === 'Escape') $('helpDialog').close(); return; }
+    const openDialog = document.querySelector('dialog[open]');
+    if (openDialog) { if (e.key === 'Escape') openDialog.close(); return; }
     const mod = e.ctrlKey || e.metaKey;
     if (mod && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); if (e.shiftKey) st.redo(); else st.undo(); return; }
     if (mod && (e.key === 'y' || e.key === 'Y')) { e.preventDefault(); st.redo(); return; }
@@ -855,7 +864,7 @@ export class UI {
       const model = buildModel(plan, { scope, roomIds, overlap: o.split ? 0 : 0.2, legend: o.legend && o.scope !== 'selected', surround: o.surround });
       this.buildWarnings = model.warnings;
       if (!model.pieces.length) { this.toast('Nichts zu exportieren – der Plan enthält keine Räume.', 'warn'); return; }
-      const base = `blindenplan-${safeName(plan.name)}`;
+      const base = `raumgefuehl-${safeName(plan.name)}`;
       const suffix = o.scope === 'whole' ? 'gesamt' : o.scope === 'rooms' ? 'raeume-einzeln' : safeName(selRoom?.name);
       if (o.format === '3mf') {
         const data = threeMF(model.pieces, { split: o.split, title: plan.name, baseColor: plan.settings.colors.base, raisedColor: plan.settings.colors.raised });
@@ -896,7 +905,7 @@ export class UI {
       if (!info.ext) { this.toast('Erst Räume zeichnen.', 'warn'); return; }
       const fr = buildFrame(plan, info.width, info.height);
       this.buildWarnings = fr.warnings;
-      const base = `blindenplan-${safeName(plan.name)}-rahmen`;
+      const base = `raumgefuehl-${safeName(plan.name)}-rahmen`;
       if (this.exportOpts.format === '3mf') {
         download(threeMF(fr.pieces, { split: false, title: `${plan.name} – Rahmen`, raisedColor: plan.settings.colors.frame }), `${base}.3mf`, 'model/3mf');
       } else {
@@ -918,7 +927,7 @@ export class UI {
   /* ---------- Datei ---------- */
   saveJSON() {
     const plan = this.store.plan;
-    download(JSON.stringify(plan, null, 2), `blindenplan-${safeName(plan.name)}.json`, 'application/json');
+    download(JSON.stringify(plan, null, 2), `raumgefuehl-${safeName(plan.name)}.json`, 'application/json');
     this.toast('Plan als JSON gespeichert.', 'ok');
   }
 

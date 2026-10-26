@@ -4,7 +4,8 @@ import { layoutLabel } from './labels.js';
 import { MARKER_KINDS, markerRadius } from './markers.js';
 
 export const PLAN_VERSION = 1;
-const STORAGE_KEY = 'blindenplan.plan.v1';
+const STORAGE_KEY = 'raumgefuehl.plan.v1';
+const LEGACY_STORAGE_KEY = 'blindenplan.plan.v1'; // vor der Umbenennung in Raumgefühl
 
 export const ROOM_COLORS = ['#e9a23b', '#4f86c6', '#67a364', '#d9605c', '#7fb7b2', '#c9b23a', '#a07ab0', '#e58fa0', '#9b7b5f', '#8f8a86'];
 
@@ -283,7 +284,7 @@ export class Store {
   }
   loadSaved() {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY);
       if (!raw) return false;
       const plan = normalizePlan(JSON.parse(raw));
       if (!plan.rooms.length && !plan.labels.length && !plan.markers.length) return false;
