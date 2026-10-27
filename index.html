@@ -51,6 +51,10 @@
     <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/></symbol>
     <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.7M12 17v.1"/></symbol>
     <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="1.5"/><circle cx="9" cy="10" r="1.6"/><path d="M20.5 15.5l-4.5-4.5-8.5 8"/></symbol>
+    <symbol id="i-move" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3l-2.5 2.5M12 3l2.5 2.5M12 21l-2.5-2.5M12 21l2.5-2.5M3 12l2.5-2.5M3 12l2.5 2.5M21 12l-2.5-2.5M21 12l-2.5 2.5"/></symbol>
+    <symbol id="i-ruler" viewBox="0 0 24 24"><path d="M4 15.5L15.5 4 20 8.5 8.5 20z"/><path d="M8 11.5l1.8 1.8M10.5 9l1.2 1.2M13 6.5l1.8 1.8"/></symbol>
+    <symbol id="i-rotl" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.3-5.7"/><path d="M4 4v5h5"/></symbol>
     <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 4l8 4-8 4-8-4z"/><path d="M4 12l8 4 8-4M4 16l8 4 8-4"/></symbol>
   </svg>
 
@@ -66,7 +70,9 @@
         <button class="btn icon" id="btnOpen" title="Plan öffnen (JSON)"><svg><use href="#i-upload"/></svg></button>
         <button class="btn icon" id="btnSave" title="Plan speichern (JSON) · Strg+S"><svg><use href="#i-save"/></svg></button>
         <button class="btn icon" id="btnExample" title="Beispielplan laden"><svg><use href="#i-example"/></svg></button>
+        <button class="btn icon" id="btnUnderlay" title="Grundriss-Skizze als Vorlage laden (Bild)"><svg><use href="#i-image"/></svg></button>
         <input type="file" id="fileInput" accept=".json,application/json" hidden>
+        <input type="file" id="imageInput" accept="image/*" hidden>
       </div>
       <div class="topbar-group" role="group" aria-label="Verlauf">
         <button class="btn icon" id="btnUndo" title="Rückgängig · Strg+Z"><svg><use href="#i-undo"/></svg></button>
@@ -109,8 +115,10 @@
         <div class="empty-card">
           <h2>Noch kein Grundriss</h2>
           <p>Wähle links das Rechteck-Werkzeug und ziehe den ersten Raum auf. Maße werden in Metern eingegeben, der Maßstab bestimmt später die Größe des Drucks.</p>
+          <p>Hast du eine Skizze oder einen Grundriss als Foto? Lade das Bild als Vorlage und zeichne die Räume darauf nach. Du kannst es auch einfach auf die Zeichenfläche ziehen.</p>
           <div class="empty-actions">
             <button class="btn" id="emptyRect"><svg><use href="#i-rect"/></svg><span>Ersten Raum zeichnen</span></button>
+            <button class="btn" id="emptyUnderlay"><svg><use href="#i-image"/></svg><span>Skizze als Vorlage</span></button>
             <button class="btn primary" id="emptyExample"><svg><use href="#i-example"/></svg><span>Beispielplan laden</span></button>
           </div>
         </div>
@@ -138,10 +146,12 @@
     <aside class="panel" id="panel">
       <div class="tabs" role="tablist" aria-label="Einstellungen">
         <button class="tab active" role="tab" data-tab="selection" aria-selected="true">Auswahl</button>
+        <button class="tab" role="tab" data-tab="underlay" aria-selected="false">Vorlage</button>
         <button class="tab" role="tab" data-tab="plan" aria-selected="false">Plan</button>
         <button class="tab" role="tab" data-tab="export" aria-selected="false">Export</button>
       </div>
       <div class="tabpanel" id="tab-selection" role="tabpanel"></div>
+      <div class="tabpanel" id="tab-underlay" role="tabpanel" hidden></div>
       <div class="tabpanel" id="tab-plan" role="tabpanel" hidden></div>
       <div class="tabpanel" id="tab-export" role="tabpanel" hidden></div>
     </aside>
@@ -187,6 +197,8 @@
         <li><strong>Auswählen</strong>: Räume verschieben, Ecken ziehen, Türen entlang der Wand schieben, Beschriftungen frei positionieren. Mit <kbd>Alt</kbd>+Klick auf eine Kante fügst du eine Ecke ein.</li>
         <li>Ansicht: Mausrad zoomt, mittlere Maustaste oder Leertaste + Ziehen verschiebt.</li>
       </ul>
+      <h3>Vorlage aus einer Skizze</h3>
+      <p>Über das Bild-Symbol oben (oder per Drag &amp; Drop auf die Zeichenfläche) lädst du ein Foto oder einen Scan eines Grundrisses. Raumgefühl stellt das Bild automatisch gerade, sodass die Wände parallel zum Raster liegen, und erkennt lange Wandlinien. Beim Zeichnen von Räumen fängt der Zeiger an diesen Linien und an ihren Ecken. Lege zuerst den <strong>Maßstab</strong> fest: im Tab „Vorlage“ eine Strecke bekannter Länge messen und die echte Länge eintragen. Die Vorlage wird nicht gedruckt und nicht exportiert; sie bleibt im Browser und in der gespeicherten JSON-Datei.</p>
       <h3>Beschriftung</h3>
       <p>Jeder Raum hat einen Namen und optional eine Kurzbezeichnung, die auf dem Plan steht. Die Brailleschrift wird automatisch erzeugt (Basisschrift, buchstabengetreu; alternativ Vollschrift mit Lautgruppen). Lange Namen passen oft nicht in kleine Räume – dann Kurzbezeichnung vergeben und die <strong>Legende</strong> mitdrucken. Die Maße folgen DIN 32976 / Marburg Medium: Punktabstand 2,5 mm, Zeichenabstand 6 mm, Zeilenabstand 10 mm.</p>
       <h3>Orientierungsmarker</h3>

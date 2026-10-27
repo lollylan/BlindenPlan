@@ -2,10 +2,13 @@
 import { labelPoint, bbox } from './geom.js';
 import { layoutLabel } from './labels.js';
 import { MARKER_KINDS, markerRadius } from './markers.js';
+import { serializeUnderlay, restoreUnderlay } from './underlay.js';
 
 export const PLAN_VERSION = 1;
 const STORAGE_KEY = 'raumgefuehl.plan.v1';
 const LEGACY_STORAGE_KEY = 'blindenplan.plan.v1'; // vor der Umbenennung in Raumgefühl
+const UNDERLAY_KEY = 'raumgefuehl.underlay.v1';
+const UNDERLAY_IMG_KEY = 'raumgefuehl.underlay.img.v1'; // Bild getrennt, damit Regler nicht jedes Mal MB schreiben
 
 export const ROOM_COLORS = ['#e9a23b', '#4f86c6', '#67a364', '#d9605c', '#7fb7b2', '#c9b23a', '#a07ab0', '#e58fa0', '#9b7b5f', '#8f8a86'];
 
@@ -215,6 +218,9 @@ export class Store {
     this.redoStack = [];
     this.listeners = new Set();
     this.saveTimer = null;
+    this.underlay = null;      // Vorlage-Bild: nicht Teil des Plans, kein Undo
+    this.underlayTimer = null;
+    this.savedUnderlaySrc = null;
   }
   subscribe(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); }
   emit(what = 'plan') { for (const fn of this.listeners) fn(what, this); }
@@ -275,6 +281,37 @@ export class Store {
   room(id) { return this.plan.rooms.find(r => r.id === id); }
   label(id) { return this.plan.labels.find(l => l.id === id); }
   marker(id) { return this.plan.markers.find(m => m.id === id); }
+
+  setUnderlay(u) { this.underlay = u; this.underlayChanged(); }
+  /** Vorlage verschoben/gedreht/umgestellt: neu zeichnen und speichern. */
+  underlayChanged() {
+    if (this.underlay) this.underlay.version++;
+    this.emit('underlay');
+    clearTimeout(this.underlayTimer);
+    this.underlayTimer = setTimeout(() => this.saveUnderlay(), 500);
+  }
+  saveUnderlay() {
+    try {
+      const u = this.underlay;
+      if (!u) { localStorage.removeItem(UNDERLAY_KEY); localStorage.removeItem(UNDERLAY_IMG_KEY); this.savedUnderlaySrc = null; return; }
+      const { src, ...meta } = serializeUnderlay(u);
+      if (this.savedUnderlaySrc !== src) { localStorage.setItem(UNDERLAY_IMG_KEY, src); this.savedUnderlaySrc = src; }
+      localStorage.setItem(UNDERLAY_KEY, JSON.stringify(meta));
+    } catch { /* Speicher voll: Vorlage gilt dann nur bis zum Neuladen */ }
+  }
+  async loadSavedUnderlay() {
+    try {
+      const src = localStorage.getItem(UNDERLAY_IMG_KEY);
+      const meta = localStorage.getItem(UNDERLAY_KEY);
+      if (!src || !meta) return false;
+      const u = await restoreUnderlay({ ...JSON.parse(meta), src });
+      if (!u) return false;
+      this.savedUnderlaySrc = src;
+      this.underlay = u;
+      this.emit('underlay');
+      return true;
+    } catch { return false; }
+  }
 
   scheduleSave() {
     clearTimeout(this.saveTimer);

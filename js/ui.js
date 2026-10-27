@@ -7,6 +7,7 @@ import { stlBinary, threeMF, zipFiles, download, safeName } from './exporters.js
 import { buildFrame, frameLayout } from './frame.js';
 import * as G from './geom.js';
 import { parentRoom } from './walls.js';
+import { loadImageFile, createUnderlay, restoreUnderlay, serializeUnderlay, autoAlign, detectLines, needsRedetect, normDeg } from './underlay.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -24,6 +25,8 @@ const TOOL_HINTS = {
   label: 'Position der Beschriftung anklicken',
   marker: 'Position des Markers anklicken',
   pan: 'Ziehen verschiebt die Ansicht · Mausrad zoomt',
+  measure: 'Strecke mit bekannter Länge messen: ersten Punkt anklicken',
+  underlay: 'Vorlage mit der Maus verschieben · Esc beendet',
 };
 
 const NICE_DENOMS = [10, 15, 20, 25, 30, 40, 50, 60, 75, 80, 100, 125, 150, 200, 250, 300, 400, 500];
@@ -37,6 +40,8 @@ export class UI {
     this.exportOpts = { format: '3mf', scope: 'whole', split: true, legend: true, surround: true };
     this.buildWarnings = [];
     this.editSnapshot = null;
+    this.measured = null;      // gemessene Strecke auf der Vorlage {d, a, b}, wartet auf die echte Länge
+    this.redetectTimer = null;
     this.panel = $('panel');
     this.bind();
   }
@@ -50,8 +55,8 @@ export class UI {
     name.addEventListener('change', () => { if (this.editSnapshot) { st.pushUndo(this.editSnapshot); this.editSnapshot = null; } st.commit(); });
 
     $('btnNew').addEventListener('click', () => {
-      if (hasContent(st.plan) && !confirm('Neuen Plan beginnen? Der aktuelle Plan wird verworfen (vorher ggf. als JSON speichern).')) return;
-      st.setPlan(emptyPlan()); this.editor.fit(); this.setTab('selection');
+      if ((hasContent(st.plan) || st.underlay) && !confirm('Neuen Plan beginnen? Der aktuelle Plan und die Vorlage werden verworfen (vorher ggf. als JSON speichern).')) return;
+      st.setPlan(emptyPlan()); this.clearUnderlay(); this.editor.fit(); this.setTab('selection');
     });
     $('btnOpen').addEventListener('click', () => $('fileInput').click());
     $('fileInput').addEventListener('change', async (e) => {
@@ -59,15 +64,33 @@ export class UI {
       e.target.value = '';
       if (!file) return;
       try {
-        const plan = normalizePlan(JSON.parse(await file.text()));
-        st.setPlan(plan); this.editor.fit();
-        this.toast(`„${plan.name}“ geladen.`, 'ok');
+        const raw = JSON.parse(await file.text());
+        const plan = normalizePlan(raw);
+        st.setPlan(plan);
+        const u = raw?.underlay ? await restoreUnderlay(raw.underlay).catch(() => null) : null;
+        this.clearUnderlay(u);
+        this.editor.fit();
+        this.toast(`„${plan.name}“ geladen${u ? ' – mit Vorlage' : ''}.`, 'ok');
       } catch { this.toast('Die Datei konnte nicht gelesen werden. Erwartet wird eine Raumgefühl-JSON-Datei.', 'danger'); }
     });
     $('btnSave').addEventListener('click', () => this.saveJSON());
     $('btnExample').addEventListener('click', () => this.loadExample());
     $('emptyExample').addEventListener('click', () => this.loadExample());
     $('emptyRect').addEventListener('click', () => { st.setTool('rect'); $('editor').focus(); });
+    $('btnUnderlay').addEventListener('click', () => $('imageInput').click());
+    $('emptyUnderlay').addEventListener('click', () => $('imageInput').click());
+    $('imageInput').addEventListener('change', (e) => { const f = e.target.files?.[0]; e.target.value = ''; this.importImage(f); });
+    // Bild auf die Zeichenfläche ziehen oder aus der Zwischenablage einfügen
+    const stage = $('stage');
+    const hasFiles = (e) => [...(e.dataTransfer?.types ?? [])].includes('Files');
+    stage.addEventListener('dragover', (e) => { if (!hasFiles(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; stage.classList.add('dropping'); });
+    stage.addEventListener('dragleave', (e) => { if (!stage.contains(e.relatedTarget)) stage.classList.remove('dropping'); });
+    stage.addEventListener('drop', (e) => { if (!hasFiles(e)) return; e.preventDefault(); stage.classList.remove('dropping'); this.importImage(e.dataTransfer.files[0]); });
+    document.addEventListener('paste', (e) => {
+      if (this.isTyping(e) || document.querySelector('dialog[open]')) return;
+      const item = [...(e.clipboardData?.items ?? [])].find(it => it.kind === 'file' && it.type.startsWith('image/'));
+      if (item) { e.preventDefault(); this.importImage(item.getAsFile()); }
+    });
     $('btnUndo').addEventListener('click', () => st.undo());
     $('btnRedo').addEventListener('click', () => st.redo());
     $('btnHelp').addEventListener('click', () => $('helpDialog').showModal());
@@ -97,6 +120,7 @@ export class UI {
     this.panel.addEventListener('input', (e) => this.onFieldInput(e, false));
     this.panel.addEventListener('change', (e) => this.onFieldInput(e, true));
     this.panel.addEventListener('click', (e) => this.onPanelClick(e));
+    this.panel.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.id === 'ulRealLen') { e.preventDefault(); this.applyScale(); } });
 
     document.addEventListener('keydown', (e) => this.onKey(e));
     document.addEventListener('keyup', (e) => { if (e.code === 'Space') this.editor.setSpace(false); });
@@ -168,6 +192,7 @@ export class UI {
   onFieldInput(e, isChange) {
     const el = e.target;
     if (!el.matches('[data-path]')) return;
+    if (el.dataset.target === 'underlay') { this.onUnderlayField(el, isChange); return; }
     const st = this.store;
     const type = el.dataset.type || 'text';
     const instant = type === 'checkbox' || type === 'select' || type === 'color';
@@ -197,6 +222,29 @@ export class UI {
     } else {
       st.touch();
     }
+  }
+
+  /** Felder der Vorlage: kein Undo, sofort übernehmen. */
+  onUnderlayField(el, isChange) {
+    const u = this.store.underlay;
+    if (!u) return;
+    const type = el.dataset.type;
+    const path = el.dataset.path;
+    let value;
+    if (type === 'checkbox') {
+      if (!isChange) return;
+      value = el.checked;
+    } else {
+      value = parseFloat(String(el.value).replace(',', '.'));
+      if (!isFinite(value)) { el.classList.add('invalid'); return; }
+      if (el.min !== '' && value < parseFloat(el.min)) value = parseFloat(el.min);
+      if (el.max !== '' && value > parseFloat(el.max)) value = parseFloat(el.max);
+      el.classList.remove('invalid');
+      if (type === 'percent') value /= 100;
+    }
+    u[path] = path === 'rot' ? normDeg(value) : value;
+    if (path === 'rot') this.redetectSoon();
+    this.store.underlayChanged();
   }
 
   afterChange(what) {
@@ -262,6 +310,20 @@ export class UI {
       }
       case 'flipH': case 'flipV': { const id = sel?.id ?? sel?.roomId; if (id) this.editor.transformRoom(id, btn.dataset.action); break; }
       case 'view3d': this.setView('3d'); break;
+      case 'ulLoad': $('imageInput').click(); break;
+      case 'ulAuto': this.alignUnderlay(btn); break;
+      case 'ulRot': { const u = st.underlay; if (u) { u.rot = normDeg(u.rot + parseFloat(btn.dataset.deg)); this.redetectSoon(); st.underlayChanged(); } break; }
+      case 'ulMeasure': this.measured = null; this.editor.clearMeasure(); st.setTool('measure'); this.renderUnderlay(); $('editor').focus(); break;
+      case 'ulMove': st.setTool(st.tool === 'underlay' ? 'select' : 'underlay'); if (st.tool === 'underlay') $('editor').focus(); break;
+      case 'ulFit': this.editor.fit(); break;
+      case 'ulApplyScale': this.applyScale(); break;
+      case 'ulCancelScale': this.measured = null; this.editor.clearMeasure(); this.renderUnderlay(); break;
+      case 'ulRedetect': {
+        const u = st.underlay;
+        if (u) { const n = detectLines(u); st.underlayChanged(); this.toast(n ? `${n} Wandlinien erkannt.` : 'Keine Wandlinien erkannt.', n ? 'ok' : 'warn'); }
+        break;
+      }
+      case 'ulRemove': if (confirm('Vorlage entfernen? Der gezeichnete Plan bleibt erhalten.')) { this.clearUnderlay(); this.renderUnderlay(); } break;
       case 'scaleDenom': {
         const input = this.panel.querySelector('#scaleDenom');
         const n = parseFloat(String(input.value).replace(',', '.'));
@@ -301,12 +363,13 @@ export class UI {
   setTab(tab) {
     this.tab = tab;
     document.querySelectorAll('.tabs .tab').forEach(b => { const on = b.dataset.tab === tab; b.classList.toggle('active', on); b.setAttribute('aria-selected', String(on)); });
-    for (const t of ['selection', 'plan', 'export']) $(`tab-${t}`).hidden = t !== tab;
+    for (const t of ['selection', 'underlay', 'plan', 'export']) $(`tab-${t}`).hidden = t !== tab;
     this.renderTab();
   }
 
   renderTab() {
     if (this.tab === 'selection') this.renderSelection();
+    else if (this.tab === 'underlay') this.renderUnderlay();
     else if (this.tab === 'plan') this.renderPlan();
     else this.renderExport();
   }
@@ -318,10 +381,12 @@ export class UI {
     $('btnRedo').disabled = !st.redoStack.length;
     const nameEl = $('projectName');
     if (document.activeElement !== nameEl) nameEl.value = st.plan.name;
-    $('emptyState').hidden = hasContent(st.plan);
+    $('emptyState').hidden = hasContent(st.plan) || !!st.underlay;
     this.updateStatus();
     document.querySelectorAll('.rail .tool[data-tool]').forEach(b => b.classList.toggle('active', b.dataset.tool === st.tool));
     if (what === 'tool') {
+      // angefangene Messung verwerfen, wenn ein anderes Werkzeug gewählt wird
+      if (st.tool !== 'measure' && this.editor.measure && !this.editor.measure.b) this.editor.clearMeasure();
       this.setHint(TOOL_HINTS[st.tool] || null);
       this.editor.updateCursor();
       this.editor.render();
@@ -651,6 +716,203 @@ export class UI {
       const info = this.panel.querySelector('#exportInfo');
       if (info) info.innerHTML = this.exportInfoHTML();
     }
+    if (this.tab === 'underlay' && st.underlay) {
+      const u = st.underlay;
+      this.panel.querySelectorAll('[data-target="underlay"][data-path]').forEach(el => {
+        if (el === document.activeElement) return;
+        const v = u[el.dataset.path];
+        if (el.type === 'checkbox') el.checked = !!v;
+        else el.value = el.dataset.type === 'percent' ? Math.round(v * 100) : Math.round(v * 100) / 100;
+      });
+      const ov = $('ulOpacityVal'); if (ov) ov.textContent = `${Math.round(u.opacity * 100)} %`;
+      const rh = $('ulRotHint'); if (rh) rh.textContent = this.rotText(u.rot);
+      const li = $('ulLinesInfo'); if (li) li.innerHTML = this.linesInfoHTML(u);
+      const mv = $('ulMoveBtn'); if (mv) { mv.classList.toggle('primary', st.tool === 'underlay'); mv.setAttribute('aria-pressed', String(st.tool === 'underlay')); }
+    }
+  }
+
+  /* ---------- Panel: Vorlage ---------- */
+  rotText(rot) {
+    if (Math.abs(rot) < 0.005) return 'gerade';
+    return `${fmt(Math.abs(rot), Math.abs(rot % 1) < 0.005 ? 0 : 1)}° ${rot > 0 ? 'im' : 'gegen den'} Uhrzeigersinn`;
+  }
+
+  linesInfoHTML(u) {
+    return u.lines.length
+      ? `<span><b>${u.lines.length}</b> Wandlinien erkannt</span>`
+      : '<span>Keine Wandlinien erkannt. Hilfreich sind kräftige, gerade Striche und ein gleichmäßig ausgeleuchtetes Foto.</span>';
+  }
+
+  renderUnderlay() {
+    const host = $('tab-underlay');
+    const st = this.store;
+    const u = st.underlay;
+    if (!u) {
+      host.innerHTML = `
+        <div class="section">
+          <div class="section-title"><span>Grundriss als Vorlage</span></div>
+          <p class="prose">Lade ein Foto, einen Scan oder eine Skizze des Grundrisses. Das Bild liegt durchscheinend unter dem Plan, und du zeichnest die Räume darauf nach.</p>
+          <ol class="steps">
+            <li><b>Bild laden.</b> Es wird automatisch so gedreht, dass die Wände parallel zum Raster liegen.</li>
+            <li><b>Maßstab festlegen.</b> Eine Strecke bekannter Länge messen, zum Beispiel eine Wand mit Bemaßung.</li>
+            <li><b>Räume zeichnen.</b> Der Zeiger fängt an den erkannten Wänden und ihren Ecken.</li>
+          </ol>
+          <button class="btn primary block" data-action="ulLoad">${ICON('i-image')}<span>Bild laden</span></button>
+          <div class="help" style="margin-top:8px">PNG, JPG oder WebP. Du kannst das Bild auch auf die Zeichenfläche ziehen oder mit Strg+V einfügen. PDF-Pläne vorher als Bild speichern.</div>
+        </div>`;
+      return;
+    }
+    const m = this.measured;
+    const moving = st.tool === 'underlay';
+    const calib = m ? `
+      <div class="section calib">
+        <div class="section-title"><span>Maßstab festlegen</span></div>
+        <div class="meta" style="margin-bottom:8px"><span>Gemessen: <b>${fmt(m.d)} m</b> auf der Vorlage</span></div>
+        <div class="field"><label for="ulRealLen">Echte Länge dieser Strecke</label><div class="input-unit"><input class="input" id="ulRealLen" type="number" step="0.01" min="0.05" inputmode="decimal" placeholder="z. B. 4,50"><span>m</span></div></div>
+        <div class="actions"><button class="btn primary" data-action="ulApplyScale">Maßstab übernehmen</button><button class="btn" data-action="ulCancelScale">Abbrechen</button></div>
+      </div>`
+      : !u.calibrated ? `<div class="notice warn">${ICON('i-warn')}<div>Der Maßstab ist noch geschätzt. Miss vor dem Zeichnen eine Strecke, deren Länge du kennst. <button class="btn small" style="margin-top:6px" data-action="ulMeasure">${ICON('i-ruler')}<span>Strecke messen</span></button></div></div>` : '';
+    host.innerHTML = `
+      <div class="underlay-file">
+        <img src="${u.src}" alt="">
+        <div class="uf-text"><span class="name">${esc(u.name)}</span><span class="sub">${u.w} × ${u.h} px · ${fmt(u.width, 1)} m</span></div>
+        <button class="btn icon" data-action="ulLoad" title="Anderes Bild laden">${ICON('i-upload')}</button>
+      </div>
+      ${calib}
+      <div class="section">
+        <div class="section-title"><span>Darstellung</span></div>
+        <div class="checks"><label class="check"><input type="checkbox" data-path="visible" data-type="checkbox" data-target="underlay" ${u.visible ? 'checked' : ''}> Vorlage anzeigen</label></div>
+        <div class="field"><label for="ulOpacity">Deckkraft</label>
+          <div class="range-field"><input type="range" id="ulOpacity" min="10" max="100" step="5" value="${Math.round(u.opacity * 100)}" data-path="opacity" data-type="percent" data-target="underlay"><output id="ulOpacityVal" for="ulOpacity">${Math.round(u.opacity * 100)} %</output></div>
+        </div>
+      </div>
+      <div class="section">
+        <div class="section-title"><span>Ausrichtung</span><span class="hint" id="ulRotHint">${this.rotText(u.rot)}</span></div>
+        <button class="btn block" data-action="ulAuto">${ICON('i-rotate')}<span>Automatisch geradestellen</span></button>
+        <div class="actions">
+          <button class="btn small" data-action="ulRot" data-deg="-90">${ICON('i-rotl')}<span>90° links</span></button>
+          <button class="btn small" data-action="ulRot" data-deg="90">${ICON('i-rotate')}<span>90° rechts</span></button>
+        </div>
+        <div class="row" style="align-items:end;margin-top:10px;grid-template-columns:1fr auto auto">
+          <div class="field" style="margin-bottom:0"><label for="ulRot">Drehung</label><div class="input-unit"><input class="input" id="ulRot" type="number" step="0.1" min="-180" max="180" value="${Math.round(u.rot * 100) / 100}" data-path="rot" data-type="number" data-target="underlay"><span>°</span></div></div>
+          <button class="btn" style="height:32px" data-action="ulRot" data-deg="-0.5" title="0,5° gegen den Uhrzeigersinn">−0,5°</button>
+          <button class="btn" style="height:32px" data-action="ulRot" data-deg="0.5" title="0,5° im Uhrzeigersinn">+0,5°</button>
+        </div>
+        <div class="help" style="margin-top:6px">Positive Werte drehen im Uhrzeigersinn. Die automatische Ausrichtung behält oben und unten bei; liegt die Skizze auf der Seite, mit 90° nachhelfen.</div>
+      </div>
+      <div class="section">
+        <div class="section-title"><span>Maßstab und Lage</span></div>
+        <div class="field"><label for="ulWidth">Breite des ganzen Bildes</label><div class="input-unit"><input class="input" id="ulWidth" type="number" step="0.1" min="0.5" max="1000" value="${Math.round(u.width * 100) / 100}" data-path="width" data-type="number" data-target="underlay"><span>m</span></div><div class="help">Genauer geht es über eine gemessene Strecke.</div></div>
+        <div class="actions">
+          <button class="btn small" data-action="ulMeasure">${ICON('i-ruler')}<span>Strecke messen</span></button>
+          <button class="btn small ${moving ? 'primary' : ''}" id="ulMoveBtn" data-action="ulMove" aria-pressed="${moving}">${ICON('i-move')}<span>Verschieben</span></button>
+          <button class="btn small" data-action="ulFit" title="Plan und Vorlage ganz anzeigen">${ICON('i-fit')}<span>Anzeigen</span></button>
+        </div>
+      </div>
+      <div class="section">
+        <div class="section-title"><span>Wandfang</span></div>
+        <div class="checks">
+          <label class="check"><input type="checkbox" data-path="snap" data-type="checkbox" data-target="underlay" ${u.snap ? 'checked' : ''}> Beim Zeichnen an Wänden der Vorlage fangen</label>
+          <label class="check"><input type="checkbox" data-path="showLines" data-type="checkbox" data-target="underlay" ${u.showLines ? 'checked' : ''}> Erkannte Wandlinien anzeigen</label>
+        </div>
+        <div class="meta" id="ulLinesInfo">${this.linesInfoHTML(u)}</div>
+        <div class="actions"><button class="btn small" data-action="ulRedetect">Linien neu erkennen</button></div>
+        <div class="help" style="margin-top:6px">Ecken bestehender Räume haben Vorrang vor der Vorlage. Liegen zwei Wände nah beieinander, fängt der Zeiger an ihrer Ecke.</div>
+      </div>
+      <div class="actions"><button class="btn danger" data-action="ulRemove">${ICON('i-trash')}<span>Vorlage entfernen</span></button></div>
+      <div class="help" style="margin-top:10px">Die Vorlage wird weder gedruckt noch exportiert. Sie bleibt in diesem Browser und in der gespeicherten JSON-Datei. Änderungen an ihr lassen sich nicht mit Strg+Z zurücknehmen.</div>`;
+  }
+
+  async importImage(file) {
+    const st = this.store;
+    if (!file) return;
+    if (!/^image\//.test(file.type)) {
+      this.toast(file.type === 'application/pdf' ? 'PDF-Dateien lassen sich nicht direkt laden. Bitte die Seite als Bild (PNG oder JPG) speichern oder einen Screenshot machen.' : 'Bitte eine Bilddatei wählen (PNG, JPG oder WebP).', 'warn', 6000);
+      return;
+    }
+    if (st.underlay && !confirm('Die vorhandene Vorlage durch dieses Bild ersetzen?')) return;
+    this.setHint('Vorlage wird geladen und ausgerichtet …');
+    try {
+      const loaded = await loadImageFile(file);
+      await new Promise(r => setTimeout(r, 20)); // Hinweis zeichnen lassen, bevor die Analyse rechnet
+      const u = createUnderlay(loaded, planExtent(st.plan));
+      const res = autoAlign(u);
+      const n = detectLines(u);
+      this.clearUnderlay(u);
+      this.editor.fit();
+      this.setTab('underlay');
+      const turn = !res.applied ? 'ohne eindeutige Wandrichtung – bitte von Hand drehen'
+        : Math.abs(res.delta) < 0.05 ? 'sie liegt bereits gerade' : `um ${fmt1(Math.abs(res.delta))}° geradegestellt`;
+      this.toast(`Vorlage geladen, ${turn}. ${n} Wandlinien erkannt. Jetzt den Maßstab festlegen.`, res.applied ? 'ok' : 'warn', 6500);
+    } catch (e) {
+      console.error(e);
+      this.toast('Das Bild konnte nicht gelesen werden. Fotos im HEIC-Format bitte vorher als JPG speichern.', 'danger', 6000);
+    } finally {
+      this.setHint(TOOL_HINTS[st.tool] || null);
+    }
+  }
+
+  /** Vorlage ersetzen oder entfernen, laufende Messung verwerfen. */
+  clearUnderlay(u = null) {
+    this.measured = null;
+    this.editor.clearMeasure();
+    if (!u && (this.store.tool === 'underlay' || this.store.tool === 'measure')) this.store.setTool('select');
+    this.store.setUnderlay(u);
+  }
+
+  async alignUnderlay(btn) {
+    const st = this.store;
+    const u = st.underlay;
+    if (!u) return;
+    btn?.classList.add('loading');
+    await new Promise(r => setTimeout(r, 20));
+    try {
+      const res = autoAlign(u);
+      if (!res.applied) { this.toast('Keine eindeutige Wandrichtung gefunden. Bitte von Hand drehen.', 'warn'); return; }
+      if (needsRedetect(u)) detectLines(u);
+      st.underlayChanged();
+      this.toast(Math.abs(res.delta) < 0.05 ? 'Die Vorlage liegt bereits gerade.' : `Um ${fmt1(Math.abs(res.delta))}° ${res.delta > 0 ? 'im' : 'gegen den'} Uhrzeigersinn gedreht.`, 'ok');
+    } finally {
+      btn?.classList.remove('loading');
+    }
+  }
+
+  redetectSoon() {
+    clearTimeout(this.redetectTimer);
+    this.redetectTimer = setTimeout(() => {
+      const u = this.store.underlay;
+      if (u && needsRedetect(u)) { detectLines(u); this.store.underlayChanged(); }
+    }, 300);
+  }
+
+  /** Editor meldet eine gemessene Strecke (oder null bei Abbruch). */
+  onMeasured(d, a, b) {
+    if (d == null) { this.measured = null; if (this.tab === 'underlay') this.renderUnderlay(); return; }
+    this.measured = { d, a, b };
+    this.store.setTool('select');
+    this.setTab('underlay');
+    $('ulRealLen')?.focus();
+  }
+
+  applyScale() {
+    const st = this.store;
+    const u = st.underlay, m = this.measured;
+    const input = $('ulRealLen');
+    if (!u || !m) return;
+    const L = parseFloat(String(input?.value ?? '').replace(',', '.'));
+    if (!isFinite(L) || L <= 0) { input?.classList.add('invalid'); input?.focus(); this.toast('Bitte die echte Länge der Strecke in Metern eintragen.', 'warn'); return; }
+    const f = L / m.d;
+    // der erste Messpunkt bleibt liegen
+    u.x = m.a.x + (u.x - m.a.x) * f;
+    u.y = m.a.y + (u.y - m.a.y) * f;
+    u.width *= f;
+    u.calibrated = true;
+    this.measured = null;
+    this.editor.clearMeasure();
+    st.underlayChanged();
+    this.renderUnderlay();
+    this.editor.fit();
+    this.toast(`Maßstab übernommen: Das Bild ist ${fmt(u.width, 1)} m breit.${hasContent(st.plan) ? ' Bereits gezeichnete Räume bleiben unverändert.' : ''}`, 'ok', 5000);
   }
 
   /* ---------- Panel: Plan ---------- */
@@ -927,14 +1189,17 @@ export class UI {
   /* ---------- Datei ---------- */
   saveJSON() {
     const plan = this.store.plan;
-    download(JSON.stringify(plan, null, 2), `raumgefuehl-${safeName(plan.name)}.json`, 'application/json');
-    this.toast('Plan als JSON gespeichert.', 'ok');
+    const u = this.store.underlay;
+    const data = u ? { ...plan, underlay: serializeUnderlay(u) } : plan;
+    download(JSON.stringify(data, null, 2), `raumgefuehl-${safeName(plan.name)}.json`, 'application/json');
+    this.toast(u ? 'Plan mit Vorlage als JSON gespeichert.' : 'Plan als JSON gespeichert.', 'ok');
   }
 
   loadExample() {
     const st = this.store;
-    if (hasContent(st.plan) && !confirm('Beispielplan laden? Der aktuelle Plan wird ersetzt.')) return;
+    if ((hasContent(st.plan) || st.underlay) && !confirm('Beispielplan laden? Der aktuelle Plan und die Vorlage werden ersetzt.')) return;
     st.setPlan(examplePlan());
+    this.clearUnderlay();
     this.editor.fit();
     this.setTab('selection');
     this.toast('Beispielplan geladen: Empfang mit Anmeldung und Wartebereich, Flur, Sprechzimmer, Labor.', 'ok', 5000);

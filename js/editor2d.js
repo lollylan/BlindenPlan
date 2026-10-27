@@ -4,6 +4,7 @@ import { normalizeRoom, wallRuns, dashedRuns, doorSegment, foreignDoorIntervals,
 import { layoutLabel } from './labels.js';
 import { makeRoom, makeLabel, makeMarker, rectPoints, ROOM_COLORS, PILLAR_COLOR, plateInfo, bedSize, planExtent, uid } from './state.js';
 import { markerOutline } from './markers.js';
+import { planLines, underlayCorners } from './underlay.js';
 
 const HIT = 9;        // Trefferradius in px
 const HANDLE = 5;     // halbe Griffgröße in px
@@ -11,6 +12,8 @@ const INK = '#1c1b18';
 const INK2 = '#514c43';
 const ACCENT = '#0e6b63';
 const DANGER = '#b4281e';
+
+const SNAP_PREVIEW_TOOLS = new Set(['rect', 'poly', 'zone', 'zonepoly', 'pillar']);
 
 const fmtM = (v) => `${v.toFixed(2).replace('.', ',')} m`;
 const fmtMM = (v) => `${Math.round(v)} mm`;
@@ -34,6 +37,8 @@ export class Editor {
     this.hatchCache = new Map();
     this.dpr = 1;
     this.needsRender = false;
+    this.snapGuide = null;     // zuletzt gefangener Punkt samt Wandlinien der Vorlage
+    this.measure = null;       // Messstrecke für den Maßstab der Vorlage {a, b, cur}
 
     this.bind();
     this.ro = new ResizeObserver(() => this.resize());
@@ -53,7 +58,11 @@ export class Editor {
       const r = (v) => Math.round(Math.round(v / this.snapStep) * this.snapStep * 1e6) / 1e6;
       q = { x: r(p.x), y: r(p.y) };
     }
+    this.snapGuide = null;
     if (opts.vertices !== false) {
+      // Fang an Wänden der Vorlage, Ecken bestehender Räume haben Vorrang
+      const w = this.wallSnap(p, q);
+      if (w) { q = { x: Math.round(w.point.x * 1e6) / 1e6, y: Math.round(w.point.y * 1e6) / 1e6 }; this.snapGuide = { point: q, lines: w.lines }; }
       // Fang an bestehenden Ecken (Puzzle-Anschluss)
       const sp = this.toScreen(p);
       let best = null;
@@ -64,9 +73,54 @@ export class Editor {
           if (d <= 8 && (!best || d < best.d)) best = { d, v };
         }
       }
-      if (best) q = { x: best.v.x, y: best.v.y };
+      if (best) { q = { x: best.v.x, y: best.v.y }; this.snapGuide = { point: q, lines: [] }; }
     }
     return q;
+  }
+
+  /** Nächste erkannte Wandlinie der Vorlage; liegen zwei quer zueinander nah, ihr Schnittpunkt (Ecke). */
+  wallSnap(p, q) {
+    const u = this.store.underlay;
+    if (!u || !u.visible || !u.snap || !u.lines.length) return null;
+    const tol = 10 / this.view.zoom;
+    const ext = tol * 1.5;
+    const cands = [];
+    for (const l of planLines(u)) {
+      const ap = G.sub(p, l.a);
+      const t = G.dot(ap, l.d);
+      if (t < -ext || t > l.L + ext) continue;
+      const d = Math.abs(G.cross(l.d, ap));
+      if (d <= tol) cands.push({ l, d });
+    }
+    if (!cands.length) return null;
+    cands.sort((a, b) => a.d - b.d);
+    const best = cands[0].l;
+    const other = cands.find(c => Math.abs(G.cross(best.d, c.l.d)) > 0.5)?.l;
+    if (other) {
+      const den = G.cross(best.d, other.d);
+      const s = G.cross(G.sub(other.a, best.a), other.d) / den;
+      const x = G.add(best.a, G.mul(best.d, s));
+      if (G.dist(x, p) <= tol * 1.5) return this.gridAlongWalls({ point: x, lines: [best, other] });
+    }
+    // entlang der Wand bleibt das Raster wirksam
+    const point = G.add(best.a, G.mul(best.d, G.dot(G.sub(q, best.a), best.d)));
+    return this.gridAlongWalls({ point, lines: [best] });
+  }
+
+  /** Achsparallele Wände aufs Raster legen: Skizzenstriche zittern, Nachbarräume sollen exakt anschließen. */
+  gridAlongWalls(w) {
+    if (!(this.snapStep > 0)) return w;
+    const r = (v) => Math.round(v / this.snapStep) * this.snapStep;
+    for (const l of w.lines) {
+      if (Math.abs(l.d.y) < 1e-6) w.point.y = r(w.point.y);
+      else if (Math.abs(l.d.x) < 1e-6) w.point.x = r(w.point.x);
+    }
+    return w;
+  }
+
+  underlayBounds() {
+    const u = this.store.underlay;
+    return u?.visible ? G.bbox(underlayCorners(u)) : null;
   }
 
   resize() {
@@ -83,7 +137,9 @@ export class Editor {
 
   fit() {
     const plan = this.store.plan;
-    const ext = planExtent(plan);
+    let ext = planExtent(plan);
+    const ub = this.underlayBounds();
+    if (ub) ext = ext ? G.bbox([{ x: ext.minX, y: ext.minY }, { x: ext.maxX, y: ext.maxY }, { x: ub.minX, y: ub.minY }, { x: ub.maxX, y: ub.maxY }]) : ub;
     if (!ext) { this.view = { x: 90, y: 80, zoom: 60 }; this.render(); this.cb.onZoom?.(this.view.zoom); return; }
     const m = plan.settings.plate.margin / plan.settings.scale;
     const w = ext.width + 2 * m, h = ext.height + 2 * m;
@@ -114,7 +170,7 @@ export class Editor {
     c.addEventListener('pointermove', (e) => this.onMove(e));
     c.addEventListener('pointerup', (e) => this.onUp(e));
     c.addEventListener('pointercancel', (e) => this.onUp(e));
-    c.addEventListener('pointerleave', () => { if (!this.drag) { this.pointer = null; this.hover = null; this.render(); } });
+    c.addEventListener('pointerleave', () => { if (!this.drag) { this.pointer = null; this.hover = null; this.snapGuide = null; this.render(); } });
     c.addEventListener('wheel', (e) => {
       e.preventDefault();
       const f = Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0016));
@@ -154,6 +210,15 @@ export class Editor {
     if (e.button !== 0) return;
 
     if (tool === 'select') return this.downSelect(e, s, p);
+    if (tool === 'underlay') {
+      const u = this.store.underlay;
+      if (u) { this.drag = { type: 'underlay', start: s, orig: { x: u.x, y: u.y } }; this.updateCursor(); }
+      return;
+    }
+    if (tool === 'measure') {
+      this.drag = { type: 'measureclick', start: s };
+      return;
+    }
     if (tool === 'rect' || tool === 'zone' || tool === 'pillar') {
       const sp = this.snap(p);
       this.draw = { type: 'rect', etype: tool === 'rect' ? 'room' : tool, start: sp, cur: sp, moved: false };
@@ -261,10 +326,22 @@ export class Editor {
 
     if (this.drag) { this.dragMove(e, s, p); return; }
 
+    this.snapGuide = null;
     if (this.draw?.type === 'rect') { this.draw.cur = this.snap(p); this.draw.moved = true; this.render(); return; }
     if (this.draw?.type === 'poly') { this.draw.cur = this.snap(p); this.render(); return; }
 
     const tool = this.store.tool;
+    if (tool === 'measure') {
+      const sp = this.snap(p);
+      if (this.measure && !this.measure.b) this.measure.cur = sp;
+      this.render();
+      return;
+    }
+    if (SNAP_PREVIEW_TOOLS.has(tool) && this.store.underlay?.snap) {
+      this.snap(p); // Fangpunkt schon vor dem ersten Klick zeigen
+      this.render();
+      return;
+    }
     if (tool === 'select') {
       const h = this.hitTest(s, p);
       const changed = JSON.stringify(h) !== JSON.stringify(this.hover);
@@ -292,6 +369,21 @@ export class Editor {
         return;
       }
       case 'polyclick': return;
+      case 'measureclick': {
+        const sp = this.snap(p);
+        if (this.measure && !this.measure.b) this.measure.cur = sp;
+        this.render();
+        return;
+      }
+      case 'underlay': {
+        const u = st.underlay;
+        if (!u) return;
+        u.x = d.orig.x + (s.x - d.start.x) / this.view.zoom;
+        u.y = d.orig.y + (s.y - d.start.y) / this.view.zoom;
+        u.version++; // Speichern und Panel erst beim Loslassen
+        this.render();
+        return;
+      }
       case 'vertex': {
         const room = st.room(d.roomId);
         const np = this.snap(p, { excludeRoom: room.id });
@@ -402,6 +494,8 @@ export class Editor {
       this.polyClick(p, s);
       return;
     }
+    if (d.type === 'measureclick') { this.measureClick(p); return; }
+    if (d.type === 'underlay') { st.underlayChanged(); this.updateCursor(); return; }
     if (d.type === 'pan') { this.updateCursor(); return; }
     if (d.moved && d.snapshot) {
       st.pushUndo(d.snapshot);
@@ -449,7 +543,24 @@ export class Editor {
     return { name: `Raum ${n}`, color: ROOM_COLORS[(n - 1) % ROOM_COLORS.length] };
   }
 
+  /* ---------- Vorlage: Strecke für den Maßstab messen ---------- */
+  measureClick(p) {
+    const sp = this.snap(p);
+    if (!this.measure || this.measure.b) {
+      this.measure = { a: sp, b: null, cur: sp };
+      this.cb.onHint?.('Zweiten Punkt der Strecke anklicken');
+    } else if (G.dist(this.measure.a, sp) > 1e-6) {
+      this.measure.b = sp;
+      this.cb.onMeasured?.(G.dist(this.measure.a, sp), this.measure.a, sp);
+    }
+    this.render();
+  }
+
+  clearMeasure() { this.measure = null; this.render(); }
+
   cancel() {
+    if (this.measure) { this.measure = null; this.cb.onMeasured?.(null); if (this.store.tool === 'measure') this.store.setTool('select'); this.render(); return true; }
+    if (this.store.tool === 'underlay' || this.store.tool === 'measure') { this.store.setTool('select'); return true; }
     if (this.draw) { this.draw = null; this.cb.onHint?.(null); this.render(); return true; }
     if (this.store.selection) { this.store.select(null); return true; }
     return false;
@@ -680,8 +791,10 @@ export class Editor {
   updateCursor() {
     const tool = this.store.tool;
     let cur = 'default';
-    if (this.drag?.type === 'pan' && !this.drag.maybe) cur = 'grabbing';
+    if ((this.drag?.type === 'pan' && !this.drag.maybe) || this.drag?.type === 'underlay') cur = 'grabbing';
     else if (tool === 'pan' || this.spaceDown) cur = 'grab';
+    else if (tool === 'underlay') cur = this.store.underlay ? 'move' : 'not-allowed';
+    else if (tool === 'measure') cur = 'crosshair';
     else if (tool === 'rect' || tool === 'poly' || tool === 'zone' || tool === 'zonepoly' || tool === 'pillar' || tool === 'label' || tool === 'marker' || tool === 'door') cur = 'crosshair';
     else if (this.drag) cur = this.drag.type === 'vertex' ? 'crosshair' : 'move';
     else if (this.hover) {
@@ -709,6 +822,7 @@ export class Editor {
 
     this.drawGrid(ctx);
     this.drawPlate(ctx, plan);
+    this.drawUnderlay(ctx);
 
     const sel = this.store.selection;
     const selRoomId = sel?.type === 'room' ? sel.id : (sel?.type === 'vertex' || sel?.type === 'door') ? sel.roomId : null;
@@ -716,6 +830,7 @@ export class Editor {
     for (const r of plan.rooms) if (r.type === 'room') this.drawRoom(ctx, r, s);
     for (const r of plan.rooms) if (r.type === 'zone') this.drawZone(ctx, r, s);
     for (const r of plan.rooms) if (r.type === 'pillar') this.drawPillar(ctx, r, s);
+    this.drawUnderlayLines(ctx);
 
     // Beschriftungen
     for (const r of plan.rooms) if (r.label.visible !== false) this.drawLabel(ctx, r.label.x, r.label.y, r, s, selRoomId === r.id && sel?.type === 'room', r.type === 'room' ? r : null);
@@ -738,6 +853,70 @@ export class Editor {
     }
 
     this.drawDrawing(ctx, s);
+    this.drawMeasure(ctx);
+    this.drawSnapGuide(ctx);
+  }
+
+  /** Vorlage multiplizieren: weißes Papier lässt Raster und Platte durchscheinen, Striche dunkeln ab. */
+  drawUnderlay(ctx) {
+    const u = this.store.underlay;
+    if (!u?.visible || !u.img) return;
+    const c = this.toScreen(u);
+    const k = (u.width / u.w) * this.view.zoom;
+    ctx.save();
+    ctx.globalAlpha = u.opacity;
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.imageSmoothingQuality = 'high';
+    ctx.translate(c.x, c.y);
+    ctx.rotate(u.rot * Math.PI / 180);
+    ctx.scale(k, k);
+    ctx.drawImage(u.img, -u.w / 2, -u.h / 2);
+    ctx.restore();
+    if (this.store.tool === 'underlay') {
+      const pts = underlayCorners(u);
+      this.pathPolygon(ctx, pts);
+      ctx.strokeStyle = ACCENT; ctx.setLineDash([6, 4]); ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]);
+    }
+  }
+
+  drawUnderlayLines(ctx) {
+    const u = this.store.underlay;
+    if (!u?.visible || !u.showLines || !u.lines.length) return;
+    ctx.beginPath();
+    for (const l of planLines(u)) { const a = this.toScreen(l.a), b = this.toScreen(l.b); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); }
+    ctx.strokeStyle = 'rgba(14,107,99,.55)'; ctx.lineWidth = 2; ctx.stroke();
+  }
+
+  drawSnapGuide(ctx) {
+    const g = this.snapGuide;
+    if (!g || !this.pointer) return;
+    if (g.lines.length) {
+      ctx.beginPath();
+      for (const l of g.lines) { const a = this.toScreen(l.a), b = this.toScreen(l.b); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); }
+      ctx.strokeStyle = ACCENT; ctx.lineWidth = 2; ctx.setLineDash([7, 4]); ctx.stroke(); ctx.setLineDash([]);
+    }
+    const q = this.toScreen(g.point);
+    ctx.beginPath(); ctx.arc(q.x, q.y, 5, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff'; ctx.fill(); ctx.strokeStyle = ACCENT; ctx.lineWidth = 2; ctx.stroke();
+  }
+
+  drawMeasure(ctx) {
+    const m = this.measure;
+    if (!m) return;
+    const b = m.b ?? m.cur;
+    const A = this.toScreen(m.a), B = this.toScreen(b);
+    ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y);
+    ctx.strokeStyle = ACCENT; ctx.lineWidth = 2; ctx.stroke();
+    for (const q of [A, B]) { ctx.beginPath(); ctx.arc(q.x, q.y, 4, 0, Math.PI * 2); ctx.fillStyle = ACCENT; ctx.fill(); }
+    const L = G.dist(m.a, b);
+    if (L > 1e-6) {
+      const txt = `${fmtM(L)} auf der Vorlage`;
+      ctx.font = '500 11px Inter, system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const mid = { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 - 14 };
+      const tw = ctx.measureText(txt).width + 10;
+      ctx.fillStyle = 'rgba(255,255,255,.94)'; ctx.beginPath(); ctx.roundRect(mid.x - tw / 2, mid.y - 9, tw, 18, 4); ctx.fill();
+      ctx.fillStyle = ACCENT; ctx.fillText(txt, mid.x, mid.y);
+    }
   }
 
   pathPolygon(ctx, pts, append = false) {

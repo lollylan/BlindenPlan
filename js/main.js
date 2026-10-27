@@ -18,6 +18,7 @@ const editor = new Editor(canvas, store, {
   onHint: (t) => ui?.setHint(t),
   toast: (m, k) => ui?.toast(m, k),
   onCreated: (type) => ui?.onCreated(type),
+  onMeasured: (d, a, b) => ui?.onMeasured(d, a, b),
 });
 
 /* ---------- 3D-Vorschau (verzögert geladen) ---------- */
@@ -89,6 +90,9 @@ store.subscribe((what) => {
 });
 ui.refresh('init');
 editor.fit();
+
+/* ---------- Gespeicherte Vorlage (Bild wird asynchron dekodiert) ---------- */
+store.loadSavedUnderlay().then((ok) => { if (ok) editor.fit(); });
 
 /* ---------- 3D-Schrift laden ---------- */
 (async () => {

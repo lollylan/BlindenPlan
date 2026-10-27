@@ -280,6 +280,27 @@ select.input { appearance: none; background-image: url("data:image/svg+xml,%3Csv
 .radio-card .rc-title { font-weight: 500; }
 .radio-card .rc-desc { font-size: 12px; color: var(--ink-3); }
 .radio-card.active .rc-desc { color: var(--accent-soft-ink); opacity: .85; }
+/* Vorlage */
+.prose { margin: 0 0 10px; color: var(--ink-2); font-size: 13px; }
+.steps { margin: 0 0 14px; padding-left: 20px; color: var(--ink-2); font-size: 12.5px; display: grid; gap: 6px; }
+.steps b { color: var(--ink); font-weight: 600; }
+.steps li::marker { color: var(--accent); font-weight: 600; font-variant-numeric: tabular-nums; }
+.underlay-file { display: flex; align-items: center; gap: 10px; padding: 8px; margin-bottom: 14px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-2); }
+.underlay-file img { width: 52px; height: 52px; object-fit: contain; flex: none; border-radius: 4px; background: #fff; box-shadow: inset 0 0 0 1px var(--line); }
+.uf-text { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.uf-text .name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.uf-text .sub { color: var(--ink-3); font-size: 12px; font-variant-numeric: tabular-nums; }
+.calib { background: var(--accent-soft); border-radius: var(--radius-sm); padding: 12px 12px 4px; }
+.calib .section-title, .calib .meta, .calib .meta b, .calib .field > label { color: var(--accent-soft-ink); }
+.range-field { display: flex; align-items: center; gap: 10px; height: 32px; }
+.range-field input[type=range] { flex: 1; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.range-field output { width: 44px; text-align: right; color: var(--ink-2); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.stage.dropping::after {
+  content: 'Bild hier ablegen – es wird zur Vorlage'; position: absolute; inset: 12px; z-index: 5; pointer-events: none;
+  display: grid; place-items: center; border: 2px dashed var(--accent); border-radius: 12px;
+  background: rgba(217, 236, 232, .72); color: var(--accent-soft-ink); font-weight: 600; font-size: 15px;
+}
+
 .export-info { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 12px; margin-bottom: 12px; }
 .export-info .big { font-size: 20px; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
 .export-info .small { font-size: 12px; color: var(--ink-3); }

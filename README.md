@@ -11,6 +11,7 @@ Läuft komplett im Browser, ohne Installation und ohne Server. Pläne werden aut
 ## Was das Tool kann
 
 - **Grundriss zeichnen** in Metern: Räume als Rechteck oder freies Polygon, Ecken ziehen, Ecken einfügen (Alt+Klick auf eine Kante), Raster-Fang.
+- **Vorlage aus einer Skizze:** Foto, Scan oder Skizze eines Grundrisses laden (Bild-Symbol, Drag & Drop oder Strg+V). Das Bild liegt durchscheinend unter dem Plan, wird automatisch geradegestellt (Kantenrichtungen plus Projektionsprofil) und lässt sich von Hand weiterdrehen und verschieben. Lange Wandlinien werden erkannt; beim Zeichnen fängt der Zeiger an ihnen und an ihren Ecken. Den Maßstab legt man über eine gemessene Strecke bekannter Länge fest. Die Vorlage wird nicht exportiert, bleibt aber im Browser und in der JSON-Datei.
 - **Bereiche** ohne Wände (z. B. Anmeldung und Wartebereich im selben Raum) mit flacher, gestrichelter Tastlinie.
 - **Türen** als Lücken in der Wand, optional mit niedriger Schwelle; entlang der Wand verschiebbar. Auf gemeinsamen Wänden wird die Wand des Nachbarraums automatisch mit durchbrochen.
 - **Beschriftung** je Raum: Name und Kurzbezeichnung. Braille wird automatisch erzeugt (deutsche Basisschrift oder Vollschrift), darüber optional erhabene Profilschrift für Sehende. Freie Beschriftungen (z. B. „Eingang“) sind ebenfalls möglich.
